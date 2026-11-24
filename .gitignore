@@ -1,0 +1,121 @@
+# =============================================================================
+# Secretos y configuración local
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials*.json
+.git-credentials
+.netrc
+docker-compose.override.yml
+
+# =============================================================================
+# Datos locales y volúmenes de Docker
+# (anclados a la raíz para no ocultar carpetas de código llamadas "data")
+# =============================================================================
+/data/
+/volumes/
+/.docker-data/
+/infra/**/data/
+*.dump
+*.backup
+*.sql.gz
+*.bak
+
+# Artefactos de datos y modelos
+*.parquet
+*.crc
+_delta_log/
+*.gguf
+*.safetensors
+!**/tests/fixtures/**
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Cachés y cobertura
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+.cache/
+.uv-cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.ipynb_checkpoints/
+
+# =============================================================================
+# Node / Next.js
+# =============================================================================
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+.next/
+out/
+.turbo/
+.vercel/
+.swc/
+coverage/
+next-env.d.ts
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# =============================================================================
+# Logs y temporales
+# =============================================================================
+logs/
+*.log
+*.pid
+*.tmp
+*.swp
+*~
+tmp/
+
+# =============================================================================
+# IDE, herramientas y sistema operativo
+# =============================================================================
+.idea/
+.vscode/
+*.code-workspace
+.claude/settings.local.json
+CLAUDE.local.md
+.DS_Store
+Thumbs.db
+desktop.ini
+*:Zone.Identifier

@@ -1,0 +1,13 @@
+# LF en todo el repositorio: un CRLF rompe los scripts y la configuración
+# que se montan dentro de los contenedores Linux.
+* text=auto eol=lf
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.pdf  binary
+*.woff2 binary
+*.parquet binary
