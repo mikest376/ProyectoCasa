@@ -185,7 +185,7 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 | `lakehouse` | MinIO, Unity Catalog | MinIO probado; Unity Catalog en la Fase 3 |
 | `apps` | Worker, FastAPI, Next.js | Esqueletos probados |
 | `observability` | Langfuse 2 | Probado |
-| `caddy` | Caddy | Probado en `127.0.0.1` |
+| `caddy` | Caddy | Probado en `127.0.0.1`, con certificado público |
 | `query` | Trino | Catálogo probado; se activa en la Fase 3 |
 | `ai` | Ollama | Fase 4 |
 
@@ -220,7 +220,7 @@ Los [términos de prueba de NVIDIA](https://assets.ngc.nvidia.com/products/api-c
 
 ## Exposición para la defensa del TFG
 
-Durante la presentación se pueden publicar Odoo y el frontend a través de Caddy, con los puertos 80 y 443 del router redirigidos a este equipo (`192.168.1.24`). **Es una excepción temporal** a la regla de no exponer nada sin autenticación propia ([TD-009](docs/TECHNICAL_DEBT.md#td-009), [TD-022](docs/TECHNICAL_DEBT.md#td-022)).
+Durante la presentación se pueden publicar Odoo y el frontend a través de Caddy, con los puertos 80, 443 y 8443 (TCP) del router redirigidos a este equipo (`192.168.1.24`). Con un solo nombre público, el frontend va en el 443 y Odoo en el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. **Es una excepción temporal** a la regla de no exponer nada sin autenticación propia ([TD-009](docs/TECHNICAL_DEBT.md#td-009), [TD-022](docs/TECHNICAL_DEBT.md#td-022)).
 
 ### Qué queda accesible
 
@@ -233,7 +233,7 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
 ### Riesgos
 
 - **El equipo queda en Internet.** Los rastreadores llegan en minutos: emitir un certificado público anuncia el dominio.
-- **Una sola contraseña compartida**, sin cuentas por persona ni límite de intentos.
+- **Una sola contraseña compartida**, sin cuentas por persona ni límite de intentos. No la muestres en una captura ni en un chat: si ocurre, cámbiala.
 - **Odoo 17 no recibe parches de seguridad** ([TD-012](docs/TECHNICAL_DEBT.md#td-012)).
 - **Docker Desktop oculta la IP del cliente**: Caddy no puede filtrar ni bloquear por IP.
 - **La red doméstica es la misma**: un fallo en un servicio expuesto es un punto de apoyo dentro de ella.
@@ -248,18 +248,44 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
    docker run --rm -it caddy:2.11.9-alpine caddy hash-password
    ```
 
-4. En `.env`: `CADDY_APP_HOST` y `CADDY_ODOO_HOST` con los dominios públicos, `CADDY_TLS` con un correo (activa Let's Encrypt) y `CADDY_BIND_IP=192.168.1.24`.
-5. En el router, redirige **solo** 80 y 443 a `192.168.1.24`. Sin DMZ ni UPnP. En el firewall de Windows, permite solo esos dos puertos en el perfil de red activo.
-6. Arranca y comprueba. Si algo falla, no expongas:
+4. En `.env`, con un solo nombre público:
+
+   ```bash
+   CADDY_BIND_IP=192.168.1.24
+   CADDY_ODOO_HTTPS_PORT=8443
+   CADDY_APP_HOST=tfg.example.org
+   CADDY_ODOO_HOST=tfg.example.org:8443
+   CADDY_TLS=correo@example.org       # activa Let's Encrypt
+   ```
+
+   Con dos nombres, uno por servicio y sin puerto: los dos van por el 443 y el 8443 no se abre.
+5. En el router, redirige **solo** 80, 443 y 8443 TCP a `192.168.1.24`. Sin DMZ ni UPnP. En el firewall de Windows, permite solo esos puertos en el perfil de red activo. Desde PowerShell como administrador:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName 'TFG Caddy' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80,443,8443 -Profile Public
+   # Si la regla ya existe:
+   Set-NetFirewallRule -DisplayName 'TFG Caddy' -LocalPort 80,443,8443
+   ```
+
+6. **Primero en local.** Comprueba todo sin abrir nada: la variable solo afecta a estas órdenes y no cambia `.env`. La primera vez aún no hay certificado público, así que usa `CADDY_TLS=internal` y espera un fallo de certificado por sitio:
 
    ```bash
    docker compose --profile source --profile apps up -d --wait
-   docker compose --profile caddy up -d
+   CADDY_BIND_IP=127.0.0.1 CADDY_TLS=internal docker compose --profile caddy up -d --force-recreate --wait caddy
    read -rsp 'Contraseña de acceso: ' CADDY_CHECK_PASSWORD && export CADDY_CHECK_PASSWORD
-   python3 scripts/check_exposure.py; unset CADDY_CHECK_PASSWORD
+   python3 scripts/check_exposure.py
    ```
 
-7. Prueba desde fuera de casa, por ejemplo con los datos del móvil.
+7. **Expón y vuelve a comprobar.** Debe terminar con 0 fallos. Si no, corta:
+
+   ```bash
+   docker compose --profile caddy up -d --force-recreate --wait caddy
+   python3 scripts/check_exposure.py || docker compose --profile caddy stop caddy
+   unset CADDY_CHECK_PASSWORD
+   ```
+
+   Si el certificado todavía se está emitiendo, espera unos segundos y repite el paso. No lo repitas en bucle: Let's Encrypt limita los intentos fallidos.
+8. Prueba desde fuera de casa, por ejemplo con los datos del móvil: `https://<nombre>` y `https://<nombre>:8443`.
 
 ### Durante
 
@@ -269,8 +295,8 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
 
 ### Después
 
-1. `docker compose --profile caddy down` y vuelve a poner `CADDY_BIND_IP=127.0.0.1`.
-2. Elimina las redirecciones del router y las reglas del firewall.
+1. `docker compose --profile caddy stop caddy` y vuelve a poner en `.env` `CADDY_BIND_IP=127.0.0.1`. Mientras conserve la IP de la red local, cualquier `docker compose --profile caddy up` vuelve a exponer.
+2. Elimina las redirecciones del router (80, 443 y 8443) y la regla del firewall: `Remove-NetFirewallRule -DisplayName 'TFG Caddy'`.
 3. Cambia las contraseñas usadas.
 
 Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda.

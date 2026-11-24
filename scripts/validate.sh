@@ -47,10 +47,11 @@ json.loads(pathlib.Path("infra/debezium/odoo-postgres-cdc.json").read_text(encod
 EOF
 }
 
+# Argumentos opcionales: variables adicionales, como -e CADDY_ODOO_HOST=...
 caddy_config() {
     local hash
     hash=$(docker run --rm --network none "$CADDY_IMAGE" caddy hash-password --plaintext solo-para-validar)
-    docker run --rm --network none -v "$mount" \
+    docker run --rm --network none -v "$mount" "$@" \
         -e CADDY_BASIC_AUTH_USER=ejemplo -e CADDY_BASIC_AUTH_HASH="$hash" "$CADDY_IMAGE" \
         caddy validate --config /repo/infra/caddy/Caddyfile --adapter caddyfile
 }
@@ -67,6 +68,8 @@ done
 run "caddy: formato" docker run --rm --network none -v "$mount" "$CADDY_IMAGE" \
     caddy fmt --diff /repo/infra/caddy/Caddyfile
 run "caddy: configuración" caddy_config
+run "caddy: un solo nombre público" caddy_config -e CADDY_TLS=admin@example.org \
+    -e CADDY_APP_HOST=tfg.example.org -e CADDY_ODOO_HOST=tfg.example.org:8443
 
 if [[ ${1:-} != --quick ]]; then
     run "worker: lint, tipos y pruebas" docker build -q --target test services/medallion-worker

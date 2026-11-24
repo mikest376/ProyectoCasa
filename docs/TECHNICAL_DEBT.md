@@ -4,7 +4,7 @@ Deuda asumida de forma consciente para el MVP. Lo que no está aquí no es deuda
 
 El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../CLAUDE.md#flujo-obligatorio-de-deuda-técnica). La plantilla está al final de este documento.
 
-**Última revisión:** 2026-11-24 (Fase 1)
+**Última revisión:** 2026-11-25 (Fase 1, ensayo de exposición)
 
 ## Criterios
 
@@ -51,6 +51,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-022](#td-022) | Exposición temporal a Internet para la defensa del TFG | Alta | Abierta | Tras la defensa |
 | [TD-023](#td-023) | Langfuse 2 sin parches de seguridad | Media | Abierta | Fase 6 |
 | [TD-024](#td-024) | Imágenes fijadas por tag, no por digest | Baja | Abierta | Fase 6 |
+| [TD-025](#td-025) | El disco del proyecto y de Docker anuncia un fallo | Crítica | Pendiente de decisión | Antes de continuar |
 
 ## Detalle
 
@@ -59,7 +60,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** El diseño suponía 8 GB de VRAM. `nvidia-smi` informa de 6144 MiB, y la misma GPU dibuja el escritorio de Windows, que deja unos 3,6 GB libres. `qwen2.5-coder:7b-instruct-q4_K_M` pesa 4,68 GB y necesita entre 5 y 5,5 GB en ejecución.
 - **Riesgo.** Un modelo más pequeño puede generar peor SQL. Además, la GTX 1060 (Pascal) está en la última rama de controladores que la admite (R580); Ollama [exige el 570 o superior](https://docs.ollama.com/gpu) para esta generación.
-- **Mitigación actual.** El modelo local por defecto es `qwen2.5-coder:3b-instruct-q4_K_M` (1,93 GB), que cabe en la VRAM libre. Como alternativa de más calidad, `LLM_PROVIDER=nim` usa NVIDIA NIM ([TD-021](#td-021)). La GPU es visible desde los contenedores (comprobado el 2026-11-24).
+- **Mitigación actual.** El modelo local por defecto es `qwen2.5-coder:3b-instruct-q4_K_M` (1,93 GB), que cabe en la VRAM libre. Como alternativa de más calidad, `LLM_PROVIDER=nim` usa NVIDIA NIM ([TD-021](#td-021)). La GPU es visible desde los contenedores (comprobado el 2026-11-24 y el 2026-11-25: controlador 582.66, 4164 MiB libres).
 - **Plan de pago.** En la Fase 4, medir con el conjunto de TD-018 la precisión del SQL y el tiempo de respuesta de 3B, 7B con capas en CPU y NIM, y fijar el modelo por defecto con esos datos.
 - **Disparador.** Precisión de ejecución del 3B inferior al 80 %, o respuesta p95 superior a 30 s.
 
@@ -103,7 +104,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** PostgreSQL rechaza `UPDATE` y `DELETE` en tablas publicadas que no tienen clave primaria ni `REPLICA IDENTITY`. Además, cada tabla con datos genera un topic.
 - **Riesgo.** Errores de escritura en el ERP, y presión de memoria en Kafka y Connect.
-- **Mitigación actual.** `scripts/cdc.py prepare` asigna `REPLICA IDENTITY FULL` a las tablas que lo necesitan. Probado: con los módulos del MVP, las 481 tablas tienen clave primaria; en una tabla de prueba sin ella se reprodujo el error y el script lo resolvió. Con unos 200 topics, Kafka usa 673 MiB y Connect, hasta 914 MiB de sus 1280 (71 %).
+- **Mitigación actual.** `scripts/cdc.py prepare` asigna `REPLICA IDENTITY FULL` a las tablas que lo necesitan. Probado: con los módulos del MVP, las 481 tablas tienen clave primaria; en una tabla de prueba sin ella se reprodujo el error y el script lo resolvió. Con unos 200 topics, Kafka usa 673 MiB y Connect, hasta 951 MiB de sus 1280 (74 %), medido el 2026-11-24 tras el snapshot inicial.
 - **Plan de pago.** Las tablas nuevas sin clave primaria quedan expuestas hasta repetir `prepare`. En la Fase 2, ejecutarlo en la integración continua y al instalar módulos.
 - **Disparador.** Error `cannot update table ... because it does not have a replica identity`, o Connect por encima del 80 % de su límite.
 
@@ -212,7 +213,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Todo el estado vive en volúmenes locales de Docker.
 - **Riesgo.** Pérdida total por fallo de disco o por `docker compose down -v`.
-- **Mitigación actual.** Los datos de demostración se regeneran.
+- **Mitigación actual.** Los datos de demostración se regeneran y el código está en GitHub. `.env` no tiene copia, y el disco anuncia un fallo ([TD-025](#td-025)).
 - **Plan de pago.** Copias de PostgreSQL, MinIO, Unity Catalog y Langfuse, con prueba de restauración, en la Fase 6.
 - **Disparador.** Datos que no se puedan regenerar.
 
@@ -238,9 +239,9 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-020 · Servicios sin probar en ejecución
 
 - **Contexto.** Probados el 2026-11-24 en un proyecto aislado, con datos de demostración y sin exponer nada: PostgreSQL, Odoo, Kafka, Debezium, MinIO, Trino, Langfuse, worker, backend, frontend y Caddy. Un cambio en Odoo llegó a Kafka en 0,3 a 1,3 segundos, y ningún contenedor superó su límite de memoria.
-- **Riesgo.** Errores que solo aparecen en ejecución en lo que falta: Unity Catalog, Ollama, NVIDIA NIM (no hay clave para probarlo), Caddy con un dominio y certificado públicos, y el conjunto completo con 22 GB de RAM.
-- **Mitigación actual.** Perfiles por capa: cada fase arranca solo lo que valida.
-- **Plan de pago.** Unity Catalog y Trino con las tablas reales en la Fase 3, `ai` y NIM en la Fase 4. Caddy con dominio público, en un ensayo previo a la defensa.
+- **Riesgo.** Errores que solo aparecen en ejecución en lo que falta: Unity Catalog, Ollama, NVIDIA NIM (no hay clave para probarlo) y el conjunto completo con 22 GB de RAM.
+- **Mitigación actual.** Perfiles por capa: cada fase arranca solo lo que valida. El 2026-11-25, `check_env.sh --gpu` termina con 0 fallos (22019 MiB, usuario sin privilegios y GPU en contenedor) y Caddy sirve un certificado público válido ([TD-022](#td-022)).
+- **Plan de pago.** Unity Catalog y Trino con las tablas reales en la Fase 3, `ai` y NIM en la Fase 4. Antes de probar el conjunto completo, resolver [TD-025](#td-025): con el disco saturado, las medidas de rendimiento no son válidas.
 - **Disparador.** Inicio de cada fase.
 
 <a id="td-021"></a>
@@ -255,14 +256,18 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 <a id="td-022"></a>
 ### TD-022 · Exposición temporal a Internet para la defensa del TFG
 
-- **Contexto.** Excepción aprobada a [TD-009](#td-009): durante la presentación, Odoo y el frontend se publican a través de Caddy, con los puertos 80 y 443 del router redirigidos al equipo.
-- **Riesgo.** Equipo doméstico accesible desde Internet; una sola contraseña compartida, sin límite de intentos (la imagen oficial de Caddy no lo incluye); Odoo sin parches ([TD-012](#td-012)); Docker Desktop oculta la IP del cliente, así que Caddy no puede filtrar por IP; y los certificados públicos anuncian el dominio.
+- **Contexto.** Excepción aprobada a [TD-009](#td-009): durante la presentación, Odoo y el frontend se publican a través de Caddy. Como solo hay un nombre público, el frontend usa el 443 y Odoo el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. El router redirige los tres puertos al equipo. La regla 11 de CLAUDE.md incluye el 8443 desde el 2026-11-25.
+- **Riesgo.** Equipo doméstico accesible desde Internet; una sola contraseña compartida, sin límite de intentos (la imagen oficial de Caddy no lo incluye); Odoo sin parches ([TD-012](#td-012)); Docker Desktop oculta la IP del cliente, así que Caddy no puede filtrar por IP; y los certificados públicos anuncian el dominio. Con un solo nombre, las cookies de Odoo también llegan al 443, porque no distinguen puertos.
 - **Mitigación actual.**
   - `CADDY_BIND_IP=127.0.0.1` por defecto: exponer es un acto explícito de una persona. Caddy no se reinicia solo.
   - Contraseña en todas las rutas. Probado: sin credenciales válidas no pasa nadie, y 18 variantes de rutas peligrosas de Odoo (codificadas, con barras dobles, mayúsculas) devuelven 404 incluso con contraseña.
   - Caddy solo ve a Odoo, el frontend y FastAPI. Contenedor de solo lectura y sin privilegios adicionales.
-  - `scripts/init_odoo.sh` cierra `admin/admin`, `demo/demo` y `portal/portal`. `scripts/check_exposure.py` lo comprueba y se niega a dar el visto bueno con un certificado propio.
-- **Plan de pago.** Retirar la exposición al terminar, según el [procedimiento](../README.md#exposición-para-la-defensa-del-tfg). Si se quisiera mantener, antes hay que pagar TD-009 y TD-012, o usar un túnel con identidad.
+  - `scripts/init_odoo.sh` cierra `admin/admin`, `demo/demo` y `portal/portal`. `scripts/check_exposure.py` lo comprueba y valida la cadena y el nombre del certificado servido en cada sitio: con una CA propia, no da el visto bueno.
+  - Caddy no reenvía `Cookie` al frontend ni a FastAPI, que no usan cookies: la sesión de Odoo no sale de Odoo.
+- **Ensayo** (2026-11-24). Let's Encrypt emitió el certificado (TLS-ALPN, 443). En 6 minutos llegaron 168 peticiones, muchas de rastreadores que buscaban `.env` o `.git/config`: 115 respuestas 401, 53 redirecciones y ningún acceso. El script fallaba con `TLSV1_ALERT_INTERNAL_ERROR` porque enviaba `nombre:8443` como SNI y por el 443: publicar el puerto no bastaba. La contraseña apareció en una captura y se rotó: la antigua devuelve 401 en los dos puertos.
+- **Comprobado en `127.0.0.1` con el certificado real** (2026-11-25). `check_exposure.py`, 0 fallos; con `CADDY_TLS=internal`, un fallo por sitio, como debe. Odoo redirige con `:8443`, el WebSocket responde 101 y 17 variantes de rutas bloqueadas devuelven 404 con contraseña.
+- **Límites conocidos.** El script prueba desde el propio equipo, no desde Internet. La cookie de sesión de Odoo no lleva `Secure`: si se abre `http://nombre`, viaja en claro antes de la redirección. Mientras `.env` tenga la IP de la red local, cualquier arranque del perfil `caddy` vuelve a exponer.
+- **Plan de pago.** Antes de la defensa: repetir el script con Caddy en la IP de la red local, probar desde fuera los puertos 443 y 8443, y añadir `Secure` a la cookie en Caddy. Retirar la exposición al terminar, según el [procedimiento](../README.md#exposición-para-la-defensa-del-tfg). Si se quisiera mantener, antes hay que pagar TD-009 y TD-012, o usar un túnel con identidad.
 - **Disparador.** Fin de la defensa, o cualquier acceso inesperado en los logs: corte inmediato.
 
 <a id="td-023"></a>
@@ -282,6 +287,15 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Mitigación actual.** Tags de versión exacta, comprobados en sus registros.
 - **Plan de pago.** Fijar digests y automatizar su actualización en la Fase 6.
 - **Disparador.** Comportamiento distinto entre equipos, o incidente de cadena de suministro.
+
+<a id="td-025"></a>
+### TD-025 · El disco del proyecto y de Docker anuncia un fallo
+
+- **Contexto.** El repositorio, `.env` y los datos de Docker (18,2 GB) están en un disco duro mecánico con 48 050 horas de uso. El 2026-11-25, Windows lo marca como *Predictive Failure*. El registro de eventos contiene el aviso 52 («haga una copia de seguridad de sus datos de inmediato», 2026-11-11) y reinicios del controlador (129) el 2026-11-24. Los errores de lectura, 1716, se han corregido todos hasta ahora.
+- **Riesgo.** Pérdida de los volúmenes de Docker y de `.env` en cualquier momento. Además, el disco se satura: tras reiniciar, las tareas esperaron a la E/S el 78 % del tiempo (media de 5 minutos) y `docker info` tardó más de 4 minutos. Instalar los módulos de Odoo superó los 10 minutos.
+- **Mitigación actual.** Solo el código, en GitHub. Los datos de demostración se regeneran; `.env` no tiene copia ([TD-017](#td-017)).
+- **Plan de pago.** Decisión pendiente. Recomendación: copiar `.env` a un gestor de contraseñas, mover los datos de Docker al SSD (unidad `E:`, 51 GB libres) según [SETUP_WSL](SETUP_WSL.md#4-docker-desktop), clonar allí el repositorio y sustituir el disco. El proyecto completo necesita unos 40 GB: cabe, con poco margen.
+- **Disparador.** Ya alcanzado. **Bloquea** las descargas y pruebas de carga del siguiente bloque.
 
 ## Plantilla
 
@@ -304,3 +318,5 @@ Añade también la fila correspondiente en la tabla de resumen.
 |---|---|
 | 2026-11-24 | Registro inicial: TD-001 a TD-020 (Fase 0). |
 | 2026-11-24 | Fase 1. Mitigadas: TD-001, TD-002 (opción A, probada), TD-004, TD-005 y TD-006. Aceptada: TD-003. TD-012 sube a Alta. TD-016 se reduce a integración continua. Nuevas: TD-021 a TD-024. |
+| 2026-11-24 | Puesta en marcha persistente. TD-005: consumo de Connect actualizado. |
+| 2026-11-25 | TD-022: esquema 443/8443 con un solo nombre, certificado validado por `check_exposure.py` y contraseña rotada. TD-020: 22 GB, GPU y certificado público comprobados. Nueva, Crítica: TD-025. |

@@ -4,8 +4,13 @@
     python3 scripts/check_exposure.py
 
 Con los perfiles source, apps y caddy en marcha, comprueba que fuera de 127.0.0.1 solo
-escucha Caddy, que exige contraseña, y que Odoo no conserva accesos por defecto. Solo
-lee: no cambia nada. Termina con error si no es seguro exponer. Biblioteca estándar.
+escucha Caddy, que sirve certificados públicos válidos y exige contraseña, y que Odoo no
+conserva accesos por defecto. Odoo puede tener nombre propio o compartir el del frontend
+en otro puerto (CADDY_ODOO_HOST=nombre:8443). Solo lee: no cambia nada. Termina con error
+si no es seguro exponer. Biblioteca estándar.
+
+Prueba desde este equipo y sin resolver el nombre por DNS: no sustituye a la prueba desde
+fuera de casa.
 """
 
 from __future__ import annotations
@@ -19,12 +24,36 @@ import ssl
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 LOOPBACK = {"127.0.0.1", "::1"}
+CADDY_PORTS = {80, 443, 8443}
 BLOCKED = ("/web/database/manager", "/web/database/selector", "/xmlrpc/2/common", "/jsonrpc")
 
 failures = 0
+
+
+class Port(NamedTuple):
+    """Puerto publicado en el host por un servicio."""
+
+    service: str
+    address: str
+    published: int
+    target: int
+
+
+class Site(NamedTuple):
+    """Sitio del Caddyfile y dirección del host por la que se llega a él."""
+
+    host: str
+    address: str
+    published: int
+
+    @property
+    def authority(self) -> str:
+        """Valor de la cabecera Host: el puerto solo aparece si no es el 443."""
+        return self.host if self.published == 443 else f"{self.host}:{self.published}"
 
 
 def report(good: bool, text: str) -> None:
@@ -42,42 +71,50 @@ def compose(*args: str, stdin: str | None = None) -> str:
     return result.stdout
 
 
-def published_ports() -> list[tuple[str, str, int, int]]:
+def published_ports() -> list[Port]:
     ports = []
     for line in compose("--profile", "*", "ps", "--format", "json").splitlines():
         service = json.loads(line)
         for port in service.get("Publishers") or []:
             if port.get("PublishedPort"):
                 ports.append(
-                    (service["Service"], port.get("URL", ""), port["PublishedPort"], port["TargetPort"])
+                    Port(service["Service"], port.get("URL", ""), port["PublishedPort"], port["TargetPort"])
                 )
     return ports
 
 
-def check_ports(ports: list[tuple[str, str, int, int]]) -> None:
+def check_ports(ports: list[Port]) -> None:
     print("Puertos publicados")
-    external = [port for port in ports if port[1] not in LOOPBACK]
-    intruders = [f"{name} {url}:{published}" for name, url, published, _ in external if name != "caddy"]
+    external = [port for port in ports if port.address not in LOOPBACK]
+    intruders = [f"{port.service} {port.address}:{port.published}" for port in external if port.service != "caddy"]
     report(not intruders, "fuera de 127.0.0.1 solo puede escuchar Caddy" + (f": {intruders}" if intruders else ""))
-    for name, url, published, target in external:
-        if name == "caddy":
-            report(target in (80, 443), f"Caddy escucha en {url}:{published}")
+    for port in external:
+        if port.service == "caddy":
+            report(port.target in CADDY_PORTS, f"Caddy escucha en {port.address}:{port.published}")
 
 
-def https_status(host: str, address: str, port: int, path: str, auth: str | None = None) -> int:
-    """Estado HTTP a través de Caddy, sin seguir redirecciones ni resolver el nombre por DNS.
-
-    El certificado no se valida porque puede ser propio (CADDY_TLS=internal).
-    """
+def tls_connection(site: Site, verify: bool) -> ssl.SSLSocket:
+    """Conexión TLS con el sitio. Con verify, exige cadena pública y nombre correctos."""
     context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    connection = http.client.HTTPSConnection(host, port, timeout=10)
-    connection.sock = context.wrap_socket(
-        socket.create_connection((address, port), timeout=10), server_hostname=host
-    )
+    if not verify:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    raw = socket.create_connection((site.address, site.published), timeout=10)
     try:
-        headers = {"Host": host}
+        # El SNI es solo el nombre: con el puerto, Caddy no encuentra certificado y
+        # corta con TLSV1_ALERT_INTERNAL_ERROR.
+        return context.wrap_socket(raw, server_hostname=site.host)
+    except OSError:
+        raw.close()
+        raise
+
+
+def https_status(site: Site, path: str, auth: str | None = None) -> int:
+    """Estado HTTP a través de Caddy, sin seguir redirecciones. El certificado se valida aparte."""
+    connection = http.client.HTTPSConnection(site.host, site.published, timeout=10)
+    connection.sock = tls_connection(site, verify=False)
+    try:
+        headers = {"Host": site.authority}
         if auth:
             headers["Authorization"] = f"Basic {auth}"
         connection.request("GET", path, headers=headers)
@@ -86,35 +123,94 @@ def https_status(host: str, address: str, port: int, path: str, auth: str | None
         connection.close()
 
 
-def check_caddy(ports: list[tuple[str, str, int, int]]) -> None:
+def expect(site: Site, path: str, status: int, text: str, auth: str | None = None) -> None:
+    """Un fallo de conexión cuenta como fallo de esta comprobación, sin cortar las demás."""
+    try:
+        received = https_status(site, path, auth)
+    except (OSError, http.client.HTTPException) as error:
+        report(False, f"{text} (sin respuesta: {error})")
+        return
+    report(received == status, text if received == status else f"{text} (respondió {received})")
+
+
+def check_certificate(site: Site, tls_mode: str) -> None:
+    if tls_mode == "internal":
+        report(False, f"{site.authority}: certificado público (CADDY_TLS=internal usa una CA propia)")
+        return
+    try:
+        with tls_connection(site, verify=True) as connection:
+            certificate = connection.getpeercert() or {}
+    except OSError as error:
+        report(False, f"{site.authority}: certificado público válido ({error})")
+        return
+    issuer = dict(pair[0] for pair in certificate.get("issuer", ())).get("organizationName", "?")
+    report(True, f"{site.authority}: certificado válido de {issuer}, hasta {certificate.get('notAfter', '?')}")
+
+
+def check_redirect(port: Port, host: str) -> None:
+    """El puerto 80 no sirve contenido: solo redirige a HTTPS."""
+    text = f"el puerto {port.published} solo redirige a HTTPS"
+    connection = http.client.HTTPConnection(port.address, port.published, timeout=10)
+    try:
+        connection.request("GET", "/web/login", headers={"Host": host})
+        response = connection.getresponse()
+        location = response.getheader("Location", "")
+        report(
+            response.status in (301, 308) and location.startswith((f"https://{host}/", f"https://{host}:")),
+            f"{text} ({response.status} a {location or 'ningún sitio'})",
+        )
+    except (OSError, http.client.HTTPException) as error:
+        report(False, f"{text} (sin respuesta: {error})")
+    finally:
+        connection.close()
+
+
+def caddy_site(variable: str, value: str, published: dict[int, Port]) -> Site | None:
+    """Interpreta "nombre" o "nombre:puerto", como en el Caddyfile."""
+    host, _, number = value.partition(":")
+    target = int(number or 443)
+    port = published.get(target)
+    if port is None:
+        report(False, f"{variable}={value}: Caddy no publica el puerto {target}")
+        return None
+    return Site(host, port.address, port.published)
+
+
+def check_caddy(ports: list[Port]) -> None:
     print("Caddy")
-    https = next(((url, pub) for name, url, pub, target in ports if name == "caddy" and target == 443), None)
-    if https is None:
+    published = {
+        port.target: port._replace(address="127.0.0.1" if port.address in ("0.0.0.0", "") else port.address)
+        for port in ports
+        if port.service == "caddy"
+    }
+    if not published:
         report(False, "Caddy no está en marcha (docker compose --profile caddy up -d)")
         return
-    address = "127.0.0.1" if https[0] in ("0.0.0.0", "") else https[0]
     environment = dict(
         line.partition("=")[::2] for line in compose("exec", "-T", "caddy", "env").splitlines()
     )
-    hosts = {"frontend": environment["CADDY_APP_HOST"], "odoo": environment["CADDY_ODOO_HOST"]}
-    for name, host in hosts.items():
-        for path in ("/", "/api/health") if name == "frontend" else ("/", "/web/login"):
-            report(https_status(host, address, https[1], path) == 401, f"{host}{path} exige contraseña")
+    app = caddy_site("CADDY_APP_HOST", environment["CADDY_APP_HOST"], published)
+    odoo = caddy_site("CADDY_ODOO_HOST", environment["CADDY_ODOO_HOST"], published)
+    if 80 in published and app:
+        check_redirect(published[80], app.host)
+
     wrong = base64.b64encode(b"admin:admin").decode()
-    report(https_status(hosts["odoo"], address, https[1], "/", wrong) == 401, "rechaza admin/admin")
-    report(environment.get("CADDY_TLS") != "internal", "certificado público (CADDY_TLS distinto de internal)")
+    for site, paths in ((app, ("/", "/api/health")), (odoo, ("/", "/web/login", "/websocket"))):
+        if site is None:
+            continue
+        check_certificate(site, environment.get("CADDY_TLS", "internal"))
+        for path in paths:
+            expect(site, path, 401, f"{site.authority}{path} exige contraseña")
+        expect(site, "/", 401, f"{site.authority} rechaza admin/admin", wrong)
 
     password = os.environ.get("CADDY_CHECK_PASSWORD")
-    if password:
+    if not password:
+        print("  --     rutas bloqueadas: define CADDY_CHECK_PASSWORD para comprobarlas")
+    elif odoo:
         user = environment["CADDY_BASIC_AUTH_USER"]
         auth = base64.b64encode(f"{user}:{password}".encode()).decode()
         for path in BLOCKED:
-            report(
-                https_status(hosts["odoo"], address, https[1], path, auth) == 404,
-                f"{path} bloqueada incluso con contraseña",
-            )
-    else:
-        print("  --     rutas bloqueadas: define CADDY_CHECK_PASSWORD para comprobarlas")
+            expect(odoo, path, 404, f"{odoo.authority}{path} bloqueada incluso con contraseña", auth)
 
 
 ODOO_PROBE = r"""

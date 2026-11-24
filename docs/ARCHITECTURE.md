@@ -193,7 +193,7 @@ Los puertos se publican solo en `127.0.0.1`:
 | FastAPI | `backend:8000` | 8000 |
 | Next.js | `frontend:3000` | 3000 |
 | Langfuse | `langfuse:3000` | 3001 |
-| Caddy | `caddy:80` / `caddy:443` | 80 / 443 |
+| Caddy (HTTP / frontend / Odoo con un solo nombre) | `caddy:80` / `caddy:443` / `caddy:8443` | 80 / 443 / 8443 |
 
 ## Entrada externa
 
@@ -202,10 +202,11 @@ Caddy publica Odoo y el frontend, con `/api` hacia FastAPI. El procedimiento est
 | Control | Detalle |
 |---|---|
 | Dirección | `127.0.0.1` salvo que se cambie `CADDY_BIND_IP` |
+| Nombres | Uno por servicio en el 443, o uno solo: frontend en el 443 y Odoo en el 8443. El certificado es el mismo |
 | Acceso | Contraseña en todas las rutas. Sin credenciales válidas no pasa nadie |
 | Rutas de Odoo bloqueadas | Gestor de bases de datos, `/xmlrpc`, `/jsonrpc`, registro, recuperación de contraseña y pruebas |
 | Tamaño de petición | 64 KB en la aplicación, 25 MB en Odoo |
-| Credenciales | La cabecera `Authorization` no llega a Odoo ni a FastAPI, y se oculta en los logs |
+| Credenciales | La cabecera `Authorization` no llega a Odoo ni a FastAPI, y se oculta en los logs. Las cookies no llegan al frontend ni a FastAPI |
 | Contenedor | Solo lectura, sin privilegios adicionales, sin API de administración y sin reinicio automático |
 | Verificación | `scripts/check_exposure.py` |
 

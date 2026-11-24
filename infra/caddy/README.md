@@ -7,6 +7,8 @@
 | `CADDY_APP_HOST` | `frontend:3000`; `/api/*` a `backend:8000` | Cuerpo máximo de 64 KB |
 | `CADDY_ODOO_HOST` | `odoo:8069` | Sin gestor de bases de datos, API externa, registro ni recuperación de contraseña |
 
+- Con un solo nombre público, Odoo va en su propio puerto: `CADDY_APP_HOST=nombre` y `CADDY_ODOO_HOST=nombre:8443`. Con el mismo nombre y puerto en los dos, Caddy no arranca. Let's Encrypt valida por 80 o 443; el 8443 reutiliza ese certificado.
+- Las cookies no distinguen puertos: con un solo nombre, el navegador envía la sesión de Odoo también al 443. Por eso Caddy no reenvía `Cookie` al frontend ni a FastAPI.
 - Todo exige contraseña (`basic_auth`). Sin credenciales válidas no pasa nadie: o Caddy no arranca, o responde 401 a todo.
 - Caddy solo comparte red con Odoo, el frontend y FastAPI. No puede alcanzar PostgreSQL, Kafka, MinIO, Trino ni Ollama.
 - La API de administración está desactivada: para aplicar cambios hay que reiniciar el contenedor.

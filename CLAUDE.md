@@ -41,7 +41,7 @@ Lakehouse local sobre Odoo 17 que responde preguntas en lenguaje natural:
    - `LIMIT` y tiempo máximo impuestos por el backend.
    - Trino aplica el mismo límite con reglas de acceso propias: usuario `text2sql`, solo `SELECT` sobre Gold.
 10. **Los datos no salen del host por defecto.** `LLM_PROVIDER=ollama`. Con `nim`, solo pueden salir los metadatos de Gold y la pregunta, nunca filas de resultados. Los términos de prueba de NVIDIA prohíben datos personales y confidenciales y permiten usar lo enviado para mejorar sus modelos (TD-021). La interfaz indica siempre qué proveedor responde.
-11. **Puertos solo en `127.0.0.1`.** La única excepción es Caddy (80 y 443), durante la defensa del TFG y con `CADDY_BIND_IP` cambiado a mano. Ver [exposición](#exposición-externa).
+11. **Puertos solo en `127.0.0.1`.** La única excepción es Caddy (80, 443 y 8443), durante la defensa del TFG y con `CADDY_BIND_IP` cambiado a mano. Ver [exposición](#exposición-externa).
 12. **Redes segmentadas.** Caddy solo comparte red con Odoo, el frontend y FastAPI. Odoo no ve el plano de datos. Ningún servicio se añade a `edge-odoo` o `edge-app` sin aprobación.
 13. **Versiones fijadas.** Nada de `latest` sin digest. Al cambiar una versión, comprueba que el tag existe y actualiza `docs/ARCHITECTURE.md`.
 14. **Solo datos de demostración** mientras sigan abiertas TD-009, TD-012 o la parte de datos personales de TD-004.

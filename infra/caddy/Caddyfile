@@ -41,10 +41,13 @@
 		max_size 64KB
 	}
 
-	# FastAPI publica su documentación fuera de /api: no es accesible por aquí.
+	# Las cookies no distinguen puertos: si Odoo comparte nombre, el navegador envía
+	# aquí su sesión. Ni el frontend ni FastAPI usan cookies, así que no se reenvían.
 	handle /api/* {
+		# FastAPI publica su documentación fuera de /api: no es accesible por aquí.
 		reverse_proxy backend:8000 {
 			header_up -Authorization
+			header_up -Cookie
 			transport http {
 				response_header_timeout 180s
 			}
@@ -54,10 +57,13 @@
 	handle {
 		reverse_proxy frontend:3000 {
 			header_up -Authorization
+			header_up -Cookie
 		}
 	}
 }
 
+# Nombre propio, o el del frontend en otro puerto (nombre:8443) si solo hay uno. El
+# certificado es por nombre: Let's Encrypt lo valida por 80/443 y sirve para los dos.
 {$CADDY_ODOO_HOST:odoo.localhost} {
 	import protegido
 
@@ -70,6 +76,8 @@
 	@bloqueado path */web/database* */xmlrpc/* */jsonrpc* */web/signup* */web/reset_password* */web/tests*
 	respond @bloqueado 404
 
+	# Conserva Host (con puerto), añade X-Forwarded-* y admite WebSocket sin más ajustes.
+	# TODO(TD-022): añadir Secure a la cookie de sesión de Odoo.
 	reverse_proxy odoo:8069 {
 		header_up -Authorization
 	}
