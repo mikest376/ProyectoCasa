@@ -1,0 +1,7 @@
+**
+!pyproject.toml
+!uv.lock
+!src/**
+!tests/**
+**/__pycache__
+**/*.pyc

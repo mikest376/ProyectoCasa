@@ -15,5 +15,5 @@ No admite comentarios fiables, así que las explicaciones van aquí.
 
 ## Fase 3
 
-- Activar el catálogo y decidir el metastore ([TD-002](../../docs/TECHNICAL_DEBT.md#td-002)).
+- Activar el catálogo: copiar la plantilla a `lakehouse.properties`. El metastore en ficheros sobre MinIO es la opción decidida ([TD-002](../../docs/TECHNICAL_DEBT.md#td-002)).
 - Reglas de acceso: usuario `text2sql` con `SELECT` solo sobre Gold.

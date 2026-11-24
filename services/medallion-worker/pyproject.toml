@@ -1,0 +1,50 @@
+[project]
+name = "medallion-worker"
+version = "0.1.0"
+description = "Ingesta CDC de Kafka hacia Delta Lake (Bronze, Silver y Gold)"
+requires-python = ">=3.11"
+dependencies = [
+    "confluent-kafka>=2.16,<3",
+    "pydantic>=2.11,<3",
+    "pydantic-settings>=2.9,<3",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15",
+    "pytest>=8.3",
+    "ruff>=0.11",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/medallion_worker"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "T20", "S", "DTZ", "RUF"]
+# Comentarios y textos en español: tildes y signos no son errores.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src", "tests"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["confluent_kafka.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

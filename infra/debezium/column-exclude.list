@@ -1,0 +1,37 @@
+# TD-004 · Columnas que Debezium NO captura.
+#
+# Una expresión regular por línea, contra el nombre completo esquema.tabla.columna.
+# Debezium la aplica anclada (debe coincidir entera). Sin comas: las une la
+# herramienta de registro. Nunca incluir columnas de clave primaria.
+#
+# scripts/cdc.py check compara esta lista con el esquema real y falla si encuentra
+# una columna con nombre sospechoso que no esté cubierta.
+
+# --- Contraseñas --------------------------------------------------------------
+public\.[^.]+\.([a-z0-9_]*_)?(password|passwd|passphrase|pwd)(_[a-z0-9_]*)?
+
+# --- Secretos y claves --------------------------------------------------------
+public\.[^.]+\.([a-z0-9_]*_)?secrets?(_[a-z0-9_]*)?
+public\.[^.]+\.([a-z0-9_]*_)?(api_?key|access_key|private_key|encryption_key|signature_key|hmac_key|server_key)(_[a-z0-9_]*)?
+public\.[^.]+\.([a-z0-9_]*_)?credentials?(_[a-z0-9_]*)?
+public\.mail_ice_server\.username
+public\.(res_users_apikeys|auth_totp_device)\.(key|index)
+public\.auth_totp_wizard\.(url|qrcode|code)
+public\.payment_provider\.[a-z0-9_]*(key|token|hash|signature)[a-z0-9_]*
+
+# --- Tokens -------------------------------------------------------------------
+public\.[^.]+\.([a-z0-9_]*_)?r?token
+public\.[^.]+\.([a-z0-9_]*_)?webhook_(uuid|url)
+
+# --- Credenciales de correo (SMTP e IMAP/POP) ---------------------------------
+public\.ir_mail_server\.(smtp_user|smtp_pass|smtp_ssl_certificate|smtp_ssl_private_key)
+public\.fetchmail_server\.(user|password)
+
+# --- Parámetros del sistema: el valor puede ser un secreto ---------------------
+public\.ir_config_parameter\.value
+
+# --- Contenido que puede llevar enlaces con token o documentos privados --------
+public\.mail_message\.body
+public\.mail_mail\.(body_html|headers)
+public\.ir_attachment\.(db_datas|index_content)
+public\.ir_logging\.message

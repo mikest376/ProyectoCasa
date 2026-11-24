@@ -4,7 +4,7 @@ Deuda asumida de forma consciente para el MVP. Lo que no está aquí no es deuda
 
 El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../CLAUDE.md#flujo-obligatorio-de-deuda-técnica). La plantilla está al final de este documento.
 
-**Última revisión:** 2026-11-24 (Fase 0)
+**Última revisión:** 2026-11-24 (Fase 1)
 
 ## Criterios
 
@@ -19,6 +19,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 |---|---|
 | Pendiente de decisión | Hay alternativas y falta elegir una. |
 | Abierta | Plan definido, sin pagar. |
+| Mitigada | El riesgo principal está resuelto y probado. Queda una parte, indicada en el plan de pago. |
 | Aceptada | Se mantiene durante todo el MVP. |
 | Pagada | Resuelta, con fecha y commit. |
 
@@ -26,37 +27,41 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 | ID | Deuda | Severidad | Estado | Se paga en |
 |---|---|---|---|---|
-| [TD-001](#td-001) | El modelo aprobado no cabe completo en la GPU (6 GB) | Alta | Pendiente de decisión | Antes de Fase 4 |
-| [TD-002](#td-002) | Trino no lee Unity Catalog OSS para tablas Delta | Alta | Pendiente de decisión | Fase 3 |
-| [TD-003](#td-003) | MinIO Community archivado, con imagen de un tercero | Alta | Abierta | Fases 2 y 6 |
-| [TD-004](#td-004) | La captura global copia datos sensibles a Kafka y Bronze | Alta | Abierta | Fase 1 |
-| [TD-005](#td-005) | La captura global puede bloquear escrituras en Odoo | Alta | Abierta | Fase 1 |
-| [TD-006](#td-006) | Retención de WAL ligada al slot de replicación | Media | Abierta | Fases 1 y 6 |
+| [TD-001](#td-001) | El modelo 7B no cabe completo en la GPU (6 GB) | Media | Mitigada | Fase 4 |
+| [TD-002](#td-002) | Trino no lee Unity Catalog OSS para tablas Delta | Media | Mitigada | Fase 3 |
+| [TD-003](#td-003) | MinIO Community archivado, con imagen de un tercero | Media | Aceptada | Después del MVP |
+| [TD-004](#td-004) | La captura global copia datos sensibles a Kafka y Bronze | Alta | Mitigada | Fase 6 |
+| [TD-005](#td-005) | La captura global puede bloquear escrituras en Odoo | Media | Mitigada | Fase 2 |
+| [TD-006](#td-006) | Retención de WAL ligada al slot de replicación | Media | Mitigada | Fase 6 |
 | [TD-007](#td-007) | Bronze sin particionamiento avanzado ni mantenimiento | Media | Abierta | Fase 3 |
 | [TD-008](#td-008) | Trino en un solo nodo | Media | Aceptada | Después del MVP |
 | [TD-009](#td-009) | Sin autenticación JWT ni autorización | Alta | Abierta | Fase 6 |
 | [TD-010](#td-010) | Kafka con un solo broker y sin réplicas | Media | Aceptada | Después del MVP |
 | [TD-011](#td-011) | Eventos JSON sin registro de esquemas | Media | Abierta | Fase 6 |
-| [TD-012](#td-012) | Odoo 17 fuera de soporte estándar | Media | Abierta | Después del MVP |
+| [TD-012](#td-012) | Odoo 17 fuera de soporte estándar | Alta | Abierta | Después del MVP |
 | [TD-013](#td-013) | Unity Catalog en modo desarrollo | Media | Abierta | Fases 3 y 6 |
 | [TD-014](#td-014) | Credenciales raíz compartidas y tráfico interno sin TLS | Media | Abierta | Fases 2 y 6 |
-| [TD-015](#td-015) | Sin observabilidad ni alertas | Media | Abierta | Fase 6 |
-| [TD-016](#td-016) | Sin CI ni pruebas automatizadas | Media | Abierta | Fase 2 |
+| [TD-015](#td-015) | Sin observabilidad ni alertas de infraestructura | Media | Abierta | Fase 6 |
+| [TD-016](#td-016) | Sin integración continua | Media | Abierta | Fase 2 |
 | [TD-017](#td-017) | Sin copias de seguridad | Media | Abierta | Fase 6 |
 | [TD-018](#td-018) | Text-to-SQL sin conjunto de evaluación | Media | Abierta | Fase 4 |
 | [TD-019](#td-019) | Tremor con poco mantenimiento | Media | Pendiente de decisión | Fase 5 |
-| [TD-020](#td-020) | Compose estructural sin probar en ejecución | Media | Abierta | Fases 1 a 5 |
+| [TD-020](#td-020) | Servicios sin probar en ejecución | Media | Abierta | Fases 3 y 4 |
+| [TD-021](#td-021) | NVIDIA NIM envía datos a un tercero | Alta | Abierta | Fase 4 |
+| [TD-022](#td-022) | Exposición temporal a Internet para la defensa del TFG | Alta | Abierta | Tras la defensa |
+| [TD-023](#td-023) | Langfuse 2 sin parches de seguridad | Media | Abierta | Fase 6 |
+| [TD-024](#td-024) | Imágenes fijadas por tag, no por digest | Baja | Abierta | Fase 6 |
 
 ## Detalle
 
 <a id="td-001"></a>
-### TD-001 · El modelo aprobado no cabe completo en la GPU (6 GB)
+### TD-001 · El modelo 7B no cabe completo en la GPU (6 GB)
 
-- **Contexto.** El diseño suponía 8 GB de VRAM. `nvidia-smi` informa de 6144 MiB, y la misma GPU dibuja el escritorio de Windows: 2,4 GB ocupados y 3,6 GB libres en la inspección del 2026-11-24. `qwen2.5-coder:7b-instruct-q4_K_M` pesa 4,68 GB y necesita entre 5 y 5,5 GB en ejecución.
-- **Riesgo.** Ollama reparte las capas entre GPU y CPU: respuestas más lentas y más RAM consumida. Además, la GTX 1060 (Pascal) ya está en la última rama de controladores que la admite (R580). Ollama [exige el controlador 570 o superior](https://docs.ollama.com/gpu) para esta generación.
-- **Mitigación actual.** Un modelo y una petición a la vez, contexto de 4096 tokens, caché KV en `q8_0` y 5120 MiB de RAM para las capas en CPU. El modelo se cambia con `OLLAMA_MODEL`.
-- **Plan de pago.** Comparar en la Fase 4 el modelo 7B con `qwen2.5-coder:3b-instruct-q4_K_M` (1,93 GB, cabe en la VRAM libre) usando el conjunto de evaluación de TD-018. Medir precisión del SQL y tiempo de respuesta, y fijar el modelo por defecto. Liberar VRAM cerrando aplicaciones con aceleración gráfica ayuda en ambos casos.
-- **Disparador.** Respuesta p95 superior a 30 s, o errores de memoria de GPU.
+- **Contexto.** El diseño suponía 8 GB de VRAM. `nvidia-smi` informa de 6144 MiB, y la misma GPU dibuja el escritorio de Windows, que deja unos 3,6 GB libres. `qwen2.5-coder:7b-instruct-q4_K_M` pesa 4,68 GB y necesita entre 5 y 5,5 GB en ejecución.
+- **Riesgo.** Un modelo más pequeño puede generar peor SQL. Además, la GTX 1060 (Pascal) está en la última rama de controladores que la admite (R580); Ollama [exige el 570 o superior](https://docs.ollama.com/gpu) para esta generación.
+- **Mitigación actual.** El modelo local por defecto es `qwen2.5-coder:3b-instruct-q4_K_M` (1,93 GB), que cabe en la VRAM libre. Como alternativa de más calidad, `LLM_PROVIDER=nim` usa NVIDIA NIM ([TD-021](#td-021)). La GPU es visible desde los contenedores (comprobado el 2026-11-24).
+- **Plan de pago.** En la Fase 4, medir con el conjunto de TD-018 la precisión del SQL y el tiempo de respuesta de 3B, 7B con capas en CPU y NIM, y fijar el modelo por defecto con esos datos.
+- **Disparador.** Precisión de ejecución del 3B inferior al 80 %, o respuesta p95 superior a 30 s.
 
 <a id="td-002"></a>
 ### TD-002 · Trino no lee Unity Catalog OSS para tablas Delta
@@ -66,47 +71,49 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
   - El conector Delta Lake de Trino 484 [documenta solo los metastores `thrift` y `glue`](https://trino.io/docs/current/object-storage/metastores.html). `file` sigue existiendo en el código, sin documentar.
   - La [integración oficial de Unity Catalog con Trino](https://github.com/unitycatalog/unitycatalog/blob/v0.7.0/docs/integrations/unity-catalog-trino.md) usa Iceberg REST y requiere tablas Delta con UniForm. delta-rs [no permite activarlo](https://github.com/delta-io/delta-rs/issues/3299).
 - **Riesgo.** Dos registros de metadatos que pueden divergir, y dependencia de una opción de Trino sin documentar.
-- **Mitigación actual.** Unity Catalog es el catálogo de referencia y Trino está fijado en la versión 484. La configuración propuesta está inactiva en `infra/trino/catalog/lakehouse.properties.example`.
-- **Plan de pago.** Elegir en la Fase 3:
-  - **A (recomendada para el MVP):** `hive.metastore=file` sobre MinIO, con registro por `system.register_table` desde el worker. No añade contenedores.
-  - **B:** Hive Metastore (`thrift`). Es la vía documentada, pero añade un contenedor, una base de datos y unos 768 MiB. Agota la holgura de RAM.
-  - **C:** Gold en Iceberg a través de Unity Catalog. Elimina la duplicidad, pero cambia la decisión de usar Delta Lake.
-- **Disparador.** La opción A falla en la Fase 3, o una versión de Trino elimina el metastore `file`.
+- **Decisión.** **Opción A, confirmada:** `hive.metastore=file` sobre MinIO, con registro de tablas desde el worker (`system.register_table`). No añade contenedores. Descartadas para el MVP: Hive Metastore (contenedor, base de datos y unos 768 MiB más) y Gold en Iceberg (cambia la decisión de usar Delta Lake).
+- **Mitigación actual.** Unity Catalog es el catálogo de referencia y Trino está fijado en la versión 484. La configuración está preparada, e inactiva, en `infra/trino/catalog/lakehouse.properties.example`. Probada el 2026-11-24 con esa plantilla, MinIO y una tabla escrita con delta-rs: registro, consulta con decimales exactos, lectura de commits posteriores sin volver a registrar y persistencia tras reiniciar Trino (1,2 GiB de 5).
+- **Plan de pago.** En la Fase 3, registro automático desde el worker y una prueba que compare los dos catálogos. Antes de actualizar Trino, repetir la prueba.
+- **Disparador.** Los catálogos divergen, o una versión de Trino elimina el metastore `file`. En ese caso, Hive Metastore.
 
 <a id="td-003"></a>
 ### TD-003 · MinIO Community archivado, con imagen de un tercero
 
-- **Contexto.** El repositorio [`minio/minio`](https://github.com/minio/minio) está archivado (último cambio: 2026-04-24). El 2026-11-24, `minio/minio` y `minio/mc` devuelven 404 en Docker Hub, y Quay rechaza la descarga anónima (401). El compose usa la [imagen pública de Chainguard](https://www.chainguard.dev/fr-FR/unchained/secure-and-free-minio-chainguard-containers), compilada desde código fuente.
-- **Riesgo.** El nivel gratuito de Chainguard solo ofrece `latest`: puede retirar la imagen o eliminar el digest fijado. El proyecto original no publica más parches.
-- **Mitigación actual.** Imagen fijada por digest. Los servicios usan solo la API S3, así que cambiar de almacenamiento es un cambio de configuración, salvo la creación de buckets en `minio-init`.
-- **Plan de pago.** En la Fase 2, guardar una copia local de la imagen con `docker save`. En la Fase 6, evaluar SeaweedFS, Garage y RustFS. Hay que tener en cuenta que Trino solo prueba su compatibilidad con AWS S3 y MinIO.
+- **Contexto.** El repositorio [`minio/minio`](https://github.com/minio/minio) está archivado (último cambio: 2026-04-24). El 2026-11-24, `minio/minio` y `minio/mc` devuelven 404 en Docker Hub, y Quay rechaza la descarga anónima (401).
+- **Riesgo.** El nivel gratuito de Chainguard solo ofrece `latest`: puede retirar la imagen o eliminar el digest fijado.
+- **Decisión.** **Aceptada para el MVP:** la [imagen pública de Chainguard](https://www.chainguard.dev/fr-FR/unchained/secure-and-free-minio-chainguard-containers), fijada por digest.
+- **Mitigación actual.** Probada en ejecución el 2026-11-24: arranque, creación de buckets y, con delta-rs 1.7, append, MERGE y dos escritores concurrentes sin pérdida de filas (`aws_conditional_put=etag`). Los servicios usan solo la API S3.
+- **Plan de pago.** En la Fase 2, guardar una copia local de la imagen con `docker save`. Después del MVP, evaluar SeaweedFS, Garage y RustFS. Trino solo prueba su compatibilidad con AWS S3 y MinIO.
 - **Disparador.** El digest deja de descargarse, o aparece una vulnerabilidad crítica sin parche.
 
 <a id="td-004"></a>
 ### TD-004 · La captura global copia datos sensibles a Kafka y Bronze
 
-- **Contexto.** Capturar todas las tablas incluye hashes de contraseñas (`res_users`), claves de API (`res_users_apikeys`), parámetros con secretos (`ir_config_parameter`), credenciales de correo (`ir_mail_server`, `fetchmail_server`) y datos personales (`res_partner`, `mail_message`).
+- **Contexto.** Capturar todas las tablas incluye hashes de contraseñas, claves de API, tokens, parámetros con secretos, credenciales de correo y datos personales.
 - **Riesgo.** Secretos y datos personales en claro en los topics y en una capa que, por diseño, no se modifica: borrarlos después es costoso.
-- **Mitigación actual.** El conector aún no está registrado. Solo se permiten datos de demostración y Bronze no es accesible desde Text-to-SQL.
-- **Plan de pago.** Antes del primer snapshot, en la Fase 1, excluir o enmascarar esas columnas con `column.exclude.list` y `column.mask.*`. La captura sigue siendo de todas las tablas. En la Fase 6, definir retención y borrado de datos personales en Bronze.
-- **Disparador.** **Bloquea la carga de cualquier dato real.**
+- **Mitigación actual.** **Implementada y probada antes del primer snapshot:**
+  - `infra/debezium/column-exclude.list` excluye contraseñas, claves, tokens, credenciales SMTP e IMAP, parámetros del sistema, cuerpos de correo (llevan enlaces con token) y contenido de adjuntos. La captura sigue siendo de todas las tablas. Se excluye en vez de enmascarar porque el hash de un secreto corto se puede atacar.
+  - `scripts/cdc.py check` compara la lista con el esquema real y **bloquea el alta del conector** si una columna sospechosa quedaría sin excluir. En la primera ejecución detectó dos secretos que no estaban en la lista.
+  - Comprobado con Odoo 17 y datos de demostración: 59 de 4892 columnas excluidas (5 en tablas core) y ningún secreto en los 44 692 mensajes publicados.
+- **Plan de pago.** Quedan los **datos personales** (`res_partner`, usuarios, contactos de CRM), necesarios para el análisis. En la Fase 6, definir retención y borrado en Kafka y Bronze.
+- **Disparador.** **Bloquea la carga de datos personales reales.** Repetir la comprobación tras instalar módulos de Odoo.
 
 <a id="td-005"></a>
 ### TD-005 · La captura global puede bloquear escrituras en Odoo
 
-- **Contexto.** PostgreSQL rechaza `UPDATE` y `DELETE` en tablas publicadas que no tienen clave primaria ni `REPLICA IDENTITY`. Además, cada tabla genera un topic, y una instalación de Odoo tiene cientos de tablas.
-- **Riesgo.** Errores de escritura en el ERP al activar la publicación, y presión de memoria en Kafka y Connect (heap de 768 MiB cada uno).
-- **Mitigación actual.** Ninguna: la publicación todavía no existe.
-- **Plan de pago.** En la Fase 1, listar las tablas sin clave primaria antes de crear la publicación y asignarles `REPLICA IDENTITY FULL`. Repetirlo tras instalar módulos. Medir número de topics y heap; si no cabe, agrupar topics con enrutado en Debezium.
-- **Disparador.** Error `cannot update table ... because it does not have a replica identity`, o heap de Connect por encima del 80 %.
+- **Contexto.** PostgreSQL rechaza `UPDATE` y `DELETE` en tablas publicadas que no tienen clave primaria ni `REPLICA IDENTITY`. Además, cada tabla con datos genera un topic.
+- **Riesgo.** Errores de escritura en el ERP, y presión de memoria en Kafka y Connect.
+- **Mitigación actual.** `scripts/cdc.py prepare` asigna `REPLICA IDENTITY FULL` a las tablas que lo necesitan. Probado: con los módulos del MVP, las 481 tablas tienen clave primaria; en una tabla de prueba sin ella se reprodujo el error y el script lo resolvió. Con unos 200 topics, Kafka usa 673 MiB y Connect, hasta 914 MiB de sus 1280 (71 %).
+- **Plan de pago.** Las tablas nuevas sin clave primaria quedan expuestas hasta repetir `prepare`. En la Fase 2, ejecutarlo en la integración continua y al instalar módulos.
+- **Disparador.** Error `cannot update table ... because it does not have a replica identity`, o Connect por encima del 80 % de su límite.
 
 <a id="td-006"></a>
 ### TD-006 · Retención de WAL ligada al slot de replicación
 
 - **Contexto.** Con el conector detenido, PostgreSQL conserva WAL para el slot. Se limita con `max_slot_wal_keep_size=4GB`.
 - **Riesgo.** Al superar el tope, el slot se invalida y hace falta un snapshot completo. Sin tope, el disco se llenaría.
-- **Mitigación actual.** Tope de 4 GB en `infra/postgres/postgresql.conf`.
-- **Plan de pago.** En la Fase 1, activar `heartbeat.interval.ms` y documentar la recuperación. En la Fase 6, alertar sobre el retraso del slot.
+- **Mitigación actual.** Tope de 4 GB y `heartbeat.interval.ms=10000`. `scripts/cdc.py status` muestra el retraso del slot. Probado: los cambios hechos con Connect parado se recuperan al arrancarlo, y el [procedimiento de recuperación](../infra/postgres/README.md#recuperar-un-slot-invalidado) repite el snapshot.
+- **Plan de pago.** En la Fase 6, alertar sobre el retraso del slot.
 - **Disparador.** Retraso del slot superior a 2 GB.
 
 <a id="td-007"></a>
@@ -132,9 +139,10 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** En el MVP, FastAPI, Trino, Unity Catalog, Kafka Connect y Ollama no exigen identidad.
 - **Riesgo.** Quien acceda al host puede leer los datos, y no hay trazabilidad por usuario.
-- **Mitigación actual.** Todos los puertos se publican solo en `127.0.0.1` y CORS está restringido al frontend.
+- **Mitigación actual.** Todos los puertos se publican solo en `127.0.0.1` y las redes están segmentadas: Odoo, el frontend y Caddy no alcanzan los servicios sin autenticación del plano de datos (comprobado). CORS está restringido al frontend.
+- **Excepción aprobada.** La exposición temporal para la defensa del TFG, solo a través de Caddy, con contraseña y con los controles de [TD-022](#td-022).
 - **Plan de pago.** En la Fase 6, JWT con OIDC en FastAPI, roles por dominio y propagación del usuario a Trino.
-- **Disparador.** **Bloquea exponer cualquier puerto fuera del host.**
+- **Disparador.** **Bloquea cualquier otra exposición fuera del host**, y cualquier exposición permanente.
 
 <a id="td-010"></a>
 ### TD-010 · Kafka con un solo broker y sin réplicas
@@ -150,7 +158,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Se usa `JsonConverter` con `schemas.enable=false` para ahorrar memoria y simplificar el worker.
 - **Riesgo.** Decimales, fechas y marcas de tiempo llegan como texto o enteros, y un cambio de esquema en Odoo puede pasar inadvertido.
-- **Mitigación actual.** El evento crudo se conserva en Bronze y los tipos se imponen en Silver.
+- **Mitigación actual.** El evento crudo se conserva en Bronze y los tipos se imponen en Silver. Comprobado: los importes llegan como texto exacto y las fechas, en microsegundos.
 - **Plan de pago.** Contratos de esquema con pruebas en la Fase 3. Evaluar Apicurio con Avro en la Fase 6: la imagen de Debezium ya incluye los convertidores.
 - **Disparador.** Actualización de módulos de Odoo, o dos incidencias de tipos.
 
@@ -158,10 +166,10 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-012 · Odoo 17 fuera de soporte estándar
 
 - **Contexto.** El [soporte estándar de Odoo 17](https://www.odoo.com/documentation/20.0/administration/standard_extended_support.html) terminó en septiembre de 2026. La [imagen oficial](https://github.com/docker-library/official-images/blob/master/library/odoo) ya solo se publica para 18.0, 19.0 y 20.0; la última de 17.0 es `17.0-20260908`.
-- **Riesgo.** Sin parches de seguridad.
-- **Mitigación actual.** Uso local con datos de demostración e imagen fijada.
+- **Riesgo.** Sin parches de seguridad. La severidad sube a Alta porque Odoo se expondrá durante la defensa.
+- **Mitigación actual.** Datos de demostración, imagen fijada, rol de base de datos sin superusuario, accesos por defecto cerrados y Caddy delante con contraseña y rutas bloqueadas.
 - **Plan de pago.** Migrar a una versión con soporte tras el MVP. Silver absorbe los cambios de esquema.
-- **Disparador.** Vulnerabilidad crítica o uso con datos reales.
+- **Disparador.** Vulnerabilidad crítica, uso con datos reales o exposición más allá de la defensa.
 
 <a id="td-013"></a>
 ### TD-013 · Unity Catalog en modo desarrollo
@@ -177,27 +185,27 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Worker y Trino usan las credenciales raíz de MinIO. Los servicios se comunican sin cifrar y los secretos están en `.env`.
 - **Riesgo.** Un servicio comprometido puede modificar cualquier capa.
-- **Mitigación actual.** Red interna de Docker y puertos locales. Variables S3 separadas de las de MinIO para poder cambiarlas sin tocar código.
+- **Mitigación actual.** Redes segmentadas y puertos locales. En PostgreSQL, Odoo y Debezium ya usan roles propios de mínimo privilegio. Variables S3 separadas de las de MinIO para poder cambiarlas sin tocar código.
 - **Plan de pago.** Usuarios de MinIO por servicio en la Fase 2 (worker con escritura, Trino con lectura). TLS y Docker Secrets en la Fase 6.
 - **Disparador.** Datos reales o acceso desde otro equipo.
 
 <a id="td-015"></a>
-### TD-015 · Sin observabilidad ni alertas
+### TD-015 · Sin observabilidad ni alertas de infraestructura
 
-- **Contexto.** Solo hay healthchecks y logs rotados de Docker.
+- **Contexto.** Solo hay healthchecks y logs rotados de Docker. Langfuse cubre las llamadas al LLM desde la Fase 4, no la infraestructura.
 - **Riesgo.** El retraso del CDC, los fallos del worker y las muertes por memoria pasan inadvertidos.
-- **Mitigación actual.** Healthchecks en los servicios de infraestructura.
+- **Mitigación actual.** Healthchecks en los servicios, `scripts/cdc.py status` y `scripts/check_env.sh`.
 - **Plan de pago.** Métricas de retraso de consumidor, slot, memoria y VRAM en la Fase 6, dentro del presupuesto de RAM.
 - **Disparador.** Primera incidencia detectada por un usuario.
 
 <a id="td-016"></a>
-### TD-016 · Sin CI ni pruebas automatizadas
+### TD-016 · Sin integración continua
 
-- **Contexto.** La Fase 0 no contiene código de aplicación.
-- **Riesgo.** Regresiones y secretos que llegan a `main` sin control.
-- **Mitigación actual.** Lista de comprobación en `CLAUDE.md`.
-- **Plan de pago.** En la Fase 2, GitHub Actions con validación del compose, presupuesto de memoria, `ruff`, `mypy`, `pytest` y detección de secretos.
-- **Disparador.** Primer código en `services/`.
+- **Contexto.** El disparador («primer código en `services/`») se alcanzó en la Fase 1. Las pruebas automatizadas ya existen: 13 en el worker y 17 en el backend, con `ruff` y `mypy --strict`.
+- **Riesgo.** Nadie garantiza que se ejecuten antes de llegar a `main`.
+- **Mitigación actual.** `scripts/validate.sh` ejecuta en un paso compose, presupuesto, shellcheck, hadolint, Caddy, lint, tipos, pruebas y compilación.
+- **Plan de pago.** Primera tarea de la Fase 2: GitHub Actions con ese script y detección de secretos.
+- **Disparador.** Inicio de la Fase 2.
 
 <a id="td-017"></a>
 ### TD-017 · Sin copias de seguridad
@@ -205,7 +213,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** Todo el estado vive en volúmenes locales de Docker.
 - **Riesgo.** Pérdida total por fallo de disco o por `docker compose down -v`.
 - **Mitigación actual.** Los datos de demostración se regeneran.
-- **Plan de pago.** Copias de PostgreSQL, MinIO y Unity Catalog, con prueba de restauración, en la Fase 6.
+- **Plan de pago.** Copias de PostgreSQL, MinIO, Unity Catalog y Langfuse, con prueba de restauración, en la Fase 6.
 - **Disparador.** Datos que no se puedan regenerar.
 
 <a id="td-018"></a>
@@ -215,25 +223,65 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Respuestas incorrectas pero verosímiles, y ningún criterio objetivo para elegir modelo o prompt.
 - **Mitigación actual.** El SQL ejecutado se mostrará siempre junto al resultado.
 - **Plan de pago.** Al menos 50 preguntas de los cinco dominios, medidas por precisión de ejecución, en la Fase 4.
-- **Disparador.** Cualquier cambio de modelo o de prompt.
+- **Disparador.** Cualquier cambio de modelo, de proveedor o de prompt.
 
 <a id="td-019"></a>
 ### TD-019 · Tremor con poco mantenimiento
 
 - **Contexto.** `@tremor/react` 3.18.7 exige React 18 (`^18.0.0`) y su repositorio no cambia desde enero de 2025. La variante de copiar y pegar requiere Tailwind 4 y su repositorio no cambia desde octubre de 2025. Next.js 16 admite React 18 y 19.
 - **Riesgo.** Quedar anclados a React 18 y Tailwind 3, o mantener componentes copiados.
-- **Mitigación actual.** El frontend todavía no existe.
-- **Plan de pago.** Decidir al empezar la Fase 5. Recomendación: componentes de copiar y pegar con React 19 y Tailwind 4, porque el código queda en el repositorio.
+- **Mitigación actual.** El esqueleto del frontend usa React 19, sin Tremor ni Tailwind.
+- **Plan de pago.** Decidir al empezar la Fase 5. Recomendación: componentes de copiar y pegar con React 19 y Tailwind 4, porque el código queda en el repositorio. Elegir `@tremor/react` obligaría a bajar a React 18.
 - **Disparador.** Inicio de la Fase 5.
 
 <a id="td-020"></a>
-### TD-020 · Compose estructural sin probar en ejecución
+### TD-020 · Servicios sin probar en ejecución
 
-- **Contexto.** `docker-compose.yml` se ha validado con `docker compose config` y los tags se han comprobado en sus registros, pero ningún contenedor se ha arrancado. Los servicios propios no tienen Dockerfile.
-- **Riesgo.** Errores de arranque, permisos de volúmenes o healthchecks que solo aparecen en ejecución.
+- **Contexto.** Probados el 2026-11-24 en un proyecto aislado, con datos de demostración y sin exponer nada: PostgreSQL, Odoo, Kafka, Debezium, MinIO, Trino, Langfuse, worker, backend, frontend y Caddy. Un cambio en Odoo llegó a Kafka en 0,3 a 1,3 segundos, y ningún contenedor superó su límite de memoria.
+- **Riesgo.** Errores que solo aparecen en ejecución en lo que falta: Unity Catalog, Ollama, NVIDIA NIM (no hay clave para probarlo), Caddy con un dominio y certificado públicos, y el conjunto completo con 22 GB de RAM.
 - **Mitigación actual.** Perfiles por capa: cada fase arranca solo lo que valida.
-- **Plan de pago.** Validar cada perfil en su fase: `source` y `streaming` en la 1, `lakehouse` en la 2, `query` en la 3, `ai` en la 4 y `apps` de la 2 a la 5.
+- **Plan de pago.** Unity Catalog y Trino con las tablas reales en la Fase 3, `ai` y NIM en la Fase 4. Caddy con dominio público, en un ensayo previo a la defensa.
 - **Disparador.** Inicio de cada fase.
+
+<a id="td-021"></a>
+### TD-021 · NVIDIA NIM envía datos a un tercero
+
+- **Contexto.** `LLM_PROVIDER=nim` envía el esquema de Gold y la pregunta a la API de NVIDIA. Sus [términos de prueba](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf) (consultados el 2026-11-24) solo permiten pruebas internas y evaluación (1.4), prohíben incluir datos confidenciales o personales (2.6) y autorizan a NVIDIA a usar lo enviado y lo generado para mejorar sus productos, incluidos sus modelos (3.3).
+- **Riesgo.** Una pregunta puede contener datos personales («ventas a Juan Pérez»). Dependencia de un servicio gratuito cuyo catálogo cambia: el 2026-11-24 ya no incluía Qwen Coder. En los foros de NVIDIA se habla de 40 peticiones por minuto, sin confirmación oficial.
+- **Mitigación actual.** Desactivado por defecto. La API no arranca con `nim` sin clave, exige HTTPS y no muestra la clave en logs, errores ni respuestas (con pruebas). `GET /api/llm` y la interfaz indican que el prompt sale del host. Nunca se envían filas de resultados.
+- **Plan de pago.** En la Fase 4: aviso antes de la primera pregunta, detección de datos personales en la pregunta y prueba con una clave real. El modelo `nvidia/nemotron-3.5-lightning-30b-a3b` figura en el catálogo público, pero no se ha ejecutado.
+- **Disparador.** **Bloquea el uso de NIM con datos reales.** También un cambio de términos o la retirada del modelo.
+
+<a id="td-022"></a>
+### TD-022 · Exposición temporal a Internet para la defensa del TFG
+
+- **Contexto.** Excepción aprobada a [TD-009](#td-009): durante la presentación, Odoo y el frontend se publican a través de Caddy, con los puertos 80 y 443 del router redirigidos al equipo.
+- **Riesgo.** Equipo doméstico accesible desde Internet; una sola contraseña compartida, sin límite de intentos (la imagen oficial de Caddy no lo incluye); Odoo sin parches ([TD-012](#td-012)); Docker Desktop oculta la IP del cliente, así que Caddy no puede filtrar por IP; y los certificados públicos anuncian el dominio.
+- **Mitigación actual.**
+  - `CADDY_BIND_IP=127.0.0.1` por defecto: exponer es un acto explícito de una persona. Caddy no se reinicia solo.
+  - Contraseña en todas las rutas. Probado: sin credenciales válidas no pasa nadie, y 18 variantes de rutas peligrosas de Odoo (codificadas, con barras dobles, mayúsculas) devuelven 404 incluso con contraseña.
+  - Caddy solo ve a Odoo, el frontend y FastAPI. Contenedor de solo lectura y sin privilegios adicionales.
+  - `scripts/init_odoo.sh` cierra `admin/admin`, `demo/demo` y `portal/portal`. `scripts/check_exposure.py` lo comprueba y se niega a dar el visto bueno con un certificado propio.
+- **Plan de pago.** Retirar la exposición al terminar, según el [procedimiento](../README.md#exposición-para-la-defensa-del-tfg). Si se quisiera mantener, antes hay que pagar TD-009 y TD-012, o usar un túnel con identidad.
+- **Disparador.** Fin de la defensa, o cualquier acceso inesperado en los logs: corte inmediato.
+
+<a id="td-023"></a>
+### TD-023 · Langfuse 2 sin parches de seguridad
+
+- **Contexto.** Se instala Langfuse 2 (`2.95.11`) porque solo necesita PostgreSQL. Las versiones 3 y 4 requieren ClickHouse, Redis y S3, que no caben en el presupuesto. Langfuse [declara la versión 2 en fin de vida](https://langfuse.com/docs/compatibility), sin parches de seguridad.
+- **Riesgo.** Vulnerabilidades sin corregir en un servicio que guarda prompts y SQL. Los SDK actuales no son compatibles: hay que usar el de Python v2.
+- **Mitigación actual.** Solo en `127.0.0.1`, fuera de Caddy, sin telemetría y con el registro cerrado. Probado: claves falsas rechazadas, registro desactivado y una traza guardada con el SDK 2.60. Usa 280 MiB de 768.
+- **Plan de pago.** En la Fase 6, revisar si una versión con soporte cabe en el hardware, o sustituirlo por un registro de trazas propio.
+- **Disparador.** Vulnerabilidad crítica, datos reales o necesidad de acceso desde fuera.
+
+<a id="td-024"></a>
+### TD-024 · Imágenes fijadas por tag, no por digest
+
+- **Contexto.** Salvo MinIO, las imágenes se fijan por tag completo. Un tag se puede volver a publicar con otro contenido.
+- **Riesgo.** Dos equipos con el mismo compose podrían ejecutar imágenes distintas.
+- **Mitigación actual.** Tags de versión exacta, comprobados en sus registros.
+- **Plan de pago.** Fijar digests y automatizar su actualización en la Fase 6.
+- **Disparador.** Comportamiento distinto entre equipos, o incidente de cadena de suministro.
 
 ## Plantilla
 
@@ -255,3 +303,4 @@ Añade también la fila correspondiente en la tabla de resumen.
 | Fecha | Cambio |
 |---|---|
 | 2026-11-24 | Registro inicial: TD-001 a TD-020 (Fase 0). |
+| 2026-11-24 | Fase 1. Mitigadas: TD-001, TD-002 (opción A, probada), TD-004, TD-005 y TD-006. Aceptada: TD-003. TD-012 sube a Alta. TD-016 se reduce a integración continua. Nuevas: TD-021 a TD-024. |

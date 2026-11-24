@@ -1,0 +1,76 @@
+# Único punto de entrada desde fuera del host (defensa del TFG, ver TD-009 y TD-022).
+# Publica SOLO Odoo y el frontend, con /api hacia FastAPI. Todo exige contraseña.
+# Sin credenciales válidas no pasa nadie: o Caddy no arranca, o responde 401 a todo.
+{
+	admin off
+	persist_config off
+	servers {
+		protocols h1 h2
+		max_header_size 16KB
+		timeouts {
+			read_header 10s
+			read_body 60s
+			idle 2m
+		}
+	}
+}
+
+(protegido) {
+	# "internal" usa una CA propia. Un correo electrónico activa Let's Encrypt.
+	tls {$CADDY_TLS:internal}
+
+	basic_auth {
+		{$CADDY_BASIC_AUTH_USER} {$CADDY_BASIC_AUTH_HASH}
+	}
+
+	encode zstd gzip
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+	log
+}
+
+{$CADDY_APP_HOST:app.localhost} {
+	import protegido
+
+	request_body {
+		max_size 64KB
+	}
+
+	# FastAPI publica su documentación fuera de /api: no es accesible por aquí.
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			header_up -Authorization
+			transport http {
+				response_header_timeout 180s
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:3000 {
+			header_up -Authorization
+		}
+	}
+}
+
+{$CADDY_ODOO_HOST:odoo.localhost} {
+	import protegido
+
+	request_body {
+		max_size 25MB
+	}
+
+	# Gestor de bases de datos, API externa, registro, recuperación de contraseña
+	# y páginas de pruebas: fuera de alcance aunque la contraseña se filtre.
+	@bloqueado path */web/database* */xmlrpc/* */jsonrpc* */web/signup* */web/reset_password* */web/tests*
+	respond @bloqueado 404
+
+	reverse_proxy odoo:8069 {
+		header_up -Authorization
+	}
+}

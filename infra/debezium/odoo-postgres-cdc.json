@@ -1,0 +1,34 @@
+{
+  "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+  "tasks.max": "1",
+  "plugin.name": "pgoutput",
+
+  "database.hostname": "odoo-db",
+  "database.port": "5432",
+  "database.user": "${env:DEBEZIUM_DB_USER}",
+  "database.password": "${env:DEBEZIUM_DB_PASSWORD}",
+  "database.dbname": "${env:DEBEZIUM_DB_NAME}",
+
+  "topic.prefix": "${env:DEBEZIUM_TOPIC_PREFIX}",
+  "slot.name": "${env:DEBEZIUM_SLOT_NAME}",
+  "publication.name": "${env:DEBEZIUM_PUBLICATION_NAME}",
+  "publication.autocreate.mode": "disabled",
+  "schema.include.list": "${env:DEBEZIUM_SCHEMA_INCLUDE_LIST}",
+
+  "snapshot.mode": "initial",
+  "snapshot.fetch.size": "1000",
+  "decimal.handling.mode": "string",
+  "tombstones.on.delete": "false",
+  "heartbeat.interval.ms": "10000",
+
+  "max.batch.size": "1024",
+  "max.queue.size": "4096",
+  "max.queue.size.in.bytes": "67108864",
+
+  "topic.creation.default.partitions": "1",
+  "topic.creation.default.replication.factor": "1",
+  "topic.creation.default.cleanup.policy": "delete",
+
+  "errors.log.enable": "true",
+  "errors.log.include.messages": "false"
+}
