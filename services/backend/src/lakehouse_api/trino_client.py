@@ -10,7 +10,8 @@ from typing import Any
 
 import httpx
 
-# Errores de análisis: su mensaje solo contiene nombres de la propia consulta, nunca datos.
+# Errores de análisis: Trino da su posición en la consulta, y el mensaje solo contiene nombres y
+# literales de la propia consulta.
 ANALYSIS_ERRORS = frozenset(
     {
         "AMBIGUOUS_NAME",
@@ -19,7 +20,8 @@ ANALYSIS_ERRORS = frozenset(
         "EXPRESSION_NOT_IN_DISTINCT",
         "EXPRESSION_NOT_SCALAR",
         "FUNCTION_NOT_FOUND",
-        "INVALID_FUNCTION_ARGUMENT",
+        "INVALID_COLUMN_REFERENCE",
+        "INVALID_LITERAL",
         "MISSING_COLUMN_NAME",
         "MISSING_GROUP_BY",
         "NESTED_AGGREGATION",
@@ -29,20 +31,38 @@ ANALYSIS_ERRORS = frozenset(
         "TYPE_MISMATCH",
     }
 )
+# Errores de ejecución que el modelo puede corregir. El mensaje de Trino puede citar valores de una
+# fila (Invalid format: "nombre de un cliente"), así que se sustituye por un texto fijo.
+EXECUTION_HINTS = {
+    "DIVISION_BY_ZERO": "división por cero: divide entre nullif(divisor, 0)",
+    "INVALID_CAST_ARGUMENT": "un CAST no es posible: compara cada columna con su propio tipo",
+    "INVALID_FUNCTION_ARGUMENT": (
+        "una función recibe un argumento no válido: las unidades de fecha son 'day', 'week', "
+        "'month', 'quarter' y 'year'"
+    ),
+    "SUBQUERY_MULTIPLE_ROWS": "una subconsulta devuelve varias filas: usa IN",
+}
 RETRY_STATUS = frozenset({429, 502, 503, 504})
 
 
 class TrinoError(RuntimeError):
-    """Trino no ha podido ejecutar la consulta."""
+    """Trino no ha podido ejecutar la consulta. El mensaje nunca contiene datos."""
 
     def __init__(self, name: str, message: str) -> None:
         super().__init__(message)
         self.name = name
 
+    @classmethod
+    def from_response(cls, error: dict[str, Any]) -> "TrinoError":
+        name = str(error.get("errorName"))
+        if name in ANALYSIS_ERRORS and error.get("errorLocation"):
+            return cls(name, str(error.get("message")))
+        return cls(name, EXECUTION_HINTS.get(name, "la consulta falla al ejecutarse"))
+
     @property
     def repairable(self) -> bool:
-        """El modelo puede corregirlo con el mensaje, que no contiene datos."""
-        return self.name in ANALYSIS_ERRORS
+        """El modelo puede corregirlo con el mensaje."""
+        return self.name in ANALYSIS_ERRORS or self.name in EXECUTION_HINTS
 
 
 class TrinoTimeoutError(TrinoError):
@@ -109,7 +129,7 @@ class TrinoClient:
         while True:
             error = page.get("error")
             if error:
-                raise TrinoError(str(error.get("errorName")), str(error.get("message")))
+                raise TrinoError.from_response(error)
             if page.get("columns"):
                 columns = tuple(ResultColumn(c["name"], c["type"]) for c in page["columns"])
             rows += page.get("data") or []

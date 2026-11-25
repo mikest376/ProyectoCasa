@@ -145,7 +145,7 @@ class Pipeline:
                     trace.sql = safe.sql
                     result = await self._execute(safe.sql, trace)
                 except (ModelOutputError, SqlRejectedError, TrinoError) as error:
-                    # Al modelo solo llegan rechazos y errores de análisis: no contienen datos.
+                    # Los tres mensajes describen el SQL, sin datos: van al modelo y a la traza.
                     generation.error = str(error)[:300]
                     failure = _failure(error, trace.sql)
                     if isinstance(error, TrinoError) and not error.repairable:

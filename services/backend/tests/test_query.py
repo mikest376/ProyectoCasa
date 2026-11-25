@@ -64,7 +64,7 @@ class World:
         self.prompts: list[dict[str, Any]] = []
         self.sql: list[str] = []
         self.trino_headers: list[httpx.Headers] = []
-        self.trino_error: dict[str, str] | None = None
+        self.trino_error: dict[str, Any] | None = None
         self.trino_hangs = False
         self.cancelled: list[str] = []
         self.traces: list[dict[str, Any]] = []
@@ -237,6 +237,7 @@ def test_dangerous_sql_is_never_executed(client: TestClient, world: World, sql: 
 def test_analysis_errors_are_sent_back_to_the_model(client: TestClient, world: World) -> None:
     world.trino_error = {
         "errorName": "COLUMN_NOT_FOUND",
+        "errorLocation": {"lineNumber": 1, "columnNumber": 8},
         "message": "Column 'x' cannot be resolved",
     }
     response = ask(client)
@@ -250,6 +251,7 @@ def test_analysis_errors_are_sent_back_to_the_model(client: TestClient, world: W
 def test_a_missing_column_points_to_its_table(client: TestClient, world: World) -> None:
     world.trino_error = {
         "errorName": "COLUMN_NOT_FOUND",
+        "errorLocation": {"lineNumber": 1, "columnNumber": 8},
         "message": "line 1:8: Column 'order_date' cannot be resolved",
     }
     ask(client)
@@ -259,17 +261,40 @@ def test_a_missing_column_points_to_its_table(client: TestClient, world: World) 
     assert missing_column("otra cosa") is None
 
 
-def test_execution_errors_are_not_sent_back(client: TestClient, world: World) -> None:
-    """Su mensaje puede contener datos: ni se corrige con él ni se enseña."""
-    world.trino_error = {
-        "errorName": "INVALID_CAST_ARGUMENT",
-        "message": f"Cannot cast '{SECRET_ROW}' to INT",
-    }
+@pytest.mark.parametrize(
+    ("name", "message", "attempts"),
+    [
+        # Mensajes reales de Trino 484.
+        ("INVALID_FUNCTION_ARGUMENT", f'Invalid format: "{SECRET_ROW}"', 2),
+        ("INVALID_FUNCTION_ARGUMENT", f"Cannot convert value to JSON: '{SECRET_ROW}'", 2),
+        ("INVALID_CAST_ARGUMENT", f"Cannot cast '{SECRET_ROW}' to INT", 2),
+        ("GENERIC_INTERNAL_ERROR", f"fallo al leer {SECRET_ROW}", 1),
+        # Un nombre de análisis sin posición en la consulta no da el mensaje por bueno.
+        ("NOT_SUPPORTED", f"valor no admitido: {SECRET_ROW}", 2),
+    ],
+)
+def test_execution_errors_never_carry_data(
+    client: TestClient, world: World, name: str, message: str, attempts: int
+) -> None:
+    """Trino cita valores de filas al fallar: no llegan al modelo, a la traza ni a la respuesta."""
+    world.trino_error = {"errorName": name, "message": message}
     response = ask(client)
-    assert response.status_code == 422
-    assert SECRET_ROW not in response.text
-    assert len(world.prompts) == 1
-    assert SECRET_ROW not in json.dumps(world.prompts, ensure_ascii=False)
+    assert (response.status_code, response.json()["code"]) == (422, "query_failed")
+    assert len(world.prompts) == attempts
+    assert world.traces
+    for place in (response.json(), world.prompts, world.traces):
+        assert SECRET_ROW not in json.dumps(place, ensure_ascii=False)
+
+
+def test_execution_errors_are_corrected_with_a_fixed_hint(client: TestClient, world: World) -> None:
+    world.trino_error = {
+        "errorName": "INVALID_FUNCTION_ARGUMENT",
+        "message": "'mes' is not a valid DATE field",
+    }
+    ask(client)
+    correction = world.prompts[1]["messages"][-1]["content"]
+    assert "las unidades de fecha son 'day', 'week', 'month'" in correction
+    assert "valid DATE field" not in correction
 
 
 def test_output_that_is_not_json_is_corrected(client: TestClient, world: World) -> None:
@@ -471,7 +496,8 @@ def test_results_are_cut_at_the_maximum(world: World) -> None:
 
 def test_error_types() -> None:
     assert TrinoError("COLUMN_NOT_FOUND", "x").repairable is True
-    assert TrinoError("INVALID_CAST_ARGUMENT", "x").repairable is False
+    assert TrinoError("DIVISION_BY_ZERO", "x").repairable is True
+    assert TrinoError("GENERIC_INTERNAL_ERROR", "x").repairable is False
     assert TrinoTimeoutError().repairable is False
     assert QuestionFailedError("timeout", "x").sql is None
     assert build_messages([], "¿Hola?")[0].role == "system"
