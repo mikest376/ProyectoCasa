@@ -9,7 +9,8 @@ Se ejecutan desde la raíz del repositorio, dentro de WSL.
 | `cdc.py` | `prepare`, `check`, `register` y `status` del CDC | Publicación y conector |
 | `check_exposure.py` | Comprobación previa a exponer el entorno | Nada |
 | `validate.sh` | Lint, tipos, pruebas, secretos y configuración, en contenedores. `--quick` no construye imágenes. Es lo que ejecuta la integración continua | Imágenes locales |
-| `test_integration.sh` | Permisos de MinIO y recorrido de Kafka a Bronze, en un proyecto de Compose aislado que se elimina al terminar | Nada del proyecto |
+| `check_contracts.py` | Compara los contratos de Silver con el esquema real de Odoo (TD-011) | Nada |
+| `test_integration.sh` | Permisos de MinIO, de Kafka a Bronze y de Bronze a los catálogos, en un proyecto de Compose aislado que se elimina al terminar | Nada del proyecto |
 | `backup_minio_image.sh` | Copia local de la imagen de MinIO: `save`, `verify` y `restore` (TD-003) | `../backups` |
 | `tests/test_cdc.py` | `cdc.py` contra un PostgreSQL desechable (TD-004 y TD-005) | Nada |
 | `tests/test_caddy.sh` | El Caddyfile real con servicios simulados (TD-022) | Nada |

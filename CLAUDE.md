@@ -13,14 +13,14 @@ Lakehouse local sobre Odoo 17 que responde preguntas en lenguaje natural:
 - Preparación del equipo: [docs/SETUP_WSL.md](docs/SETUP_WSL.md)
 - Fases y criterios de salida: [README.md](README.md#hoja-de-ruta)
 
-**Fase actual: 2 (Bronze).** El worker escribe Bronze; `backend` y `frontend` son esqueletos. No adelantes trabajo de fases posteriores si no se pide.
+**Fase actual: 3 (Silver, Gold y catálogos).** El worker escribe las tres capas; `backend` y `frontend` son esqueletos. No adelantes trabajo de fases posteriores si no se pide.
 
 ## Reglas de arquitectura
 
 1. **Stack cerrado.** Además del flujo anterior, están aprobados Caddy (entrada), Langfuse 2 (observabilidad del LLM) y NVIDIA NIM (LLM opcional). No se añade Spark, Flink, Zookeeper, Airflow, Hive Metastore ni otra base de datos sin aprobación explícita.
 2. **Flujo en un solo sentido.** Ninguna capa escribe en la anterior. Debezium usa un rol propio con `REPLICATION` y `SELECT`. Odoo usa un rol propietario de su base, nunca el superusuario.
-3. **Un único escritor Delta.** Solo `medallion-worker` escribe en MinIO. Trino, FastAPI y el frontend solo leen. La única excepción es el metastore de Trino (TD-002, opción A): ficheros en MinIO, con registro de tablas desde el worker. Cada servicio usa su propio usuario de MinIO con la política mínima (`infra/minio/policies`); las credenciales raíz solo las reciben `minio` y `minio-init`.
-4. **Bronze captura todas las tablas y no se modifica.** Todas las del esquema `public`, sin `table.include.list`, en modo append-only. El evento de Debezium se guarda crudo.
+3. **Un único escritor Delta.** Solo el código de `medallion-worker` escribe en MinIO, en tres procesos: ingesta (Bronze), transformación (Silver y Gold) y mantenimiento (compactación de Bronze, con usuario propio). Trino, FastAPI y el frontend solo leen. La única excepción es el metastore de Trino (TD-002, opción A): ficheros en MinIO, con registro de tablas desde el worker. Cada servicio usa su propio usuario de MinIO con la política mínima (`infra/minio/policies`); las credenciales raíz solo las reciben `minio` y `minio-init`.
+4. **Bronze captura todas las tablas y no se modifica.** Todas las del esquema `public`, sin `table.include.list`, en modo append-only. El evento de Debezium se guarda crudo. La compactación y el `VACUUM` (TD-007) reescriben ficheros, nunca filas.
 5. **Los secretos no se capturan.** `infra/debezium/column-exclude.list` excluye contraseñas, claves, tokens y credenciales de correo. Ningún conector se registra sin que `scripts/cdc.py check` termine bien, y se repite tras instalar módulos de Odoo.
 6. **Silver y Gold solo contienen los dominios core:**
 
@@ -59,30 +59,32 @@ Solo se publican Odoo y el frontend (con `/api` hacia FastAPI). Todo lo demás e
 
 ## Presupuesto de memoria
 
-WSL dispone de 22528 MiB. Los límites son fijos en `docker-compose.yml` y no se parametrizan por entorno.
+WSL dispone de 15360 MiB. Los límites son fijos en `docker-compose.yml` y no se parametrizan por entorno.
 
 | Servicio | Límite (MiB) | Ajuste interno | Perfil |
 |---|---:|---|---|
-| `odoo-db` | 768 | `shared_buffers=256MB`, 60 conexiones | `source` |
-| `odoo` | 1024 | `workers=0` | `source` |
+| `odoo-db` | 512 | `shared_buffers=256MB`, 60 conexiones | `source` |
+| `odoo` | 768 | `workers=0` | `source` |
 | `kafka` | 1024 | heap 768 MiB | `streaming` |
 | `kafka-connect` | 1280 | heap 768 MiB | `streaming` |
-| `minio` | 768 | sin ajuste | `lakehouse` |
-| `unity-catalog` | 768 | heap 512 MiB | `lakehouse` |
-| `trino` | 3072 | heap 2048 MiB, 800 MB por consulta | `query` |
-| `ollama` | 4096 | capas que no caben en VRAM | `ai` |
-| `medallion-worker` | 512 | `POLARS_MAX_THREADS=4` | `apps` |
+| `minio` | 640 | sin ajuste | `lakehouse` |
+| `unity-catalog` | 640 | heap 512 MiB | `lakehouse` |
+| `trino` | 2560 | heap 2048 MiB, 800 MB por consulta | `query` |
+| `ollama` | 2560 | capas que no caben en VRAM | `ai` |
+| `medallion-worker` | 384 | `POLARS_MAX_THREADS=4` | `apps` |
+| `medallion-transform` | 512 | `POLARS_MAX_THREADS=4` | `apps` |
+| `bronze-maintenance` | 384 | `POLARS_MAX_THREADS=2` | `apps` |
 | `backend` | 384 | un proceso | `apps` |
 | `frontend` | 256 | `--max-old-space-size=160` | `apps` |
-| `langfuse` | 768 | `--max-old-space-size=512` | `observability` |
-| `langfuse-db` | 256 | sin ajuste | `observability` |
+| `langfuse` | 640 | `--max-old-space-size=512` | `observability` |
+| `langfuse-db` | 192 | sin ajuste | `observability` |
 | `caddy` | 128 | sin ajuste | `caddy` |
-| **Total** | **15104** | | |
-| **Reserva** (kernel, Docker, editor) | **7424** | | |
+| **Total** | **12864** | | |
+| **Reserva** (kernel, Docker, editor) | **2496** | | |
 
 Los servicios de un solo uso (`*-init`) no cuentan en el total. `odoo-init` se ejecuta con `odoo` detenido.
 
-- Tope del total: **20480 MiB**. La reserva nunca baja de 2048 MiB.
+- Tope del total: **13312 MiB**. La reserva nunca baja de 2048 MiB.
 - Todo servicio declara `deploy.resources.limits.memory`.
 - Heap de JVM: como máximo el 80 % del límite del contenedor, siempre explícito.
 - Para subir un límite, baja otro o consume holgura, y actualiza esta tabla en el mismo commit.

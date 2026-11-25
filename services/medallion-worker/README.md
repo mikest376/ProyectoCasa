@@ -6,10 +6,18 @@ Consume los eventos CDC de Kafka y escribe Delta Lake en MinIO. Es el único ser
 |---|---|
 | Tecnología | Python 3.11+, cliente de Kafka, `deltalake` (delta-rs) y `polars` |
 | Entrada | Topics `odoo.public.*` |
-| Salida | `s3://bronze/odoo/<tabla>`. Silver, Gold y el registro en Unity Catalog, en la Fase 3 |
-| Memoria | 1536 MiB |
+| Salida | `s3://bronze/odoo/<tabla>`, `s3://silver/<dominio>/<tabla>`, `s3://gold/<dominio>/<modelo>` y registro en Trino y Unity Catalog |
+| Memoria | 384 MiB la ingesta, 512 la transformación y 384 el mantenimiento |
 
-**Estado (Fase 2).** Escribe Bronze: una tabla Delta por topic, en modo append-only, con el evento crudo.
+| Orden | Servicio | Función |
+|---|---|---|
+| `ingest` | `medallion-worker` | Kafka → Bronze |
+| `transform` | `medallion-transform` | Bronze → Silver → Gold y catálogos. `--once`, una sola vez |
+| `maintain` | `bronze-maintenance` | Compactación y `VACUUM` diarios de Bronze. `--once`, una sola vez |
+| `maintain-gold` | | Lo mismo para Silver y Gold: `transform` lo hace a diario |
+| `partition` | | Particiona las tablas Bronze de mayor volumen. Con la ingesta detenida y el usuario de mantenimiento |
+| `catalogs` | | Compara Trino, Unity Catalog y lo declarado |
+| `contracts` | | Muestra los contratos de Silver en JSON |
 
 | Módulo | Función |
 |---|---|
@@ -17,6 +25,12 @@ Consume los eventos CDC de Kafka y escribe Delta Lake en MinIO. Es el único ser
 | `batching.py` | Lotes por número, tamaño y tiempo, agrupados por topic |
 | `sinks.py` | Escritura en Delta Lake |
 | `consumer.py` | Bucle de Kafka y confirmación de offsets |
+| `contracts.py`, `decoding.py` | Contratos de Silver y conversión estricta de los valores de Debezium |
+| `silver.py` | Estado actual por LSN: duplicados, borrados y valores TOAST |
+| `gold_models.py`, `gold.py` | Modelos dimensionales y su reconstrucción |
+| `catalogs.py` | Registro en Trino y Unity Catalog, y comparación |
+| `maintenance.py` | Compactación, limpieza y partición |
+| `transform.py` | Ciclo de transformación |
 
 ## Garantías
 
@@ -29,7 +43,7 @@ Consume los eventos CDC de Kafka y escribe Delta Lake en MinIO. Es el único ser
 
 ```bash
 docker build --target test services/medallion-worker     # lint, tipos y pruebas unitarias
-bash scripts/test_integration.sh                         # Kafka y MinIO reales, en un proyecto aislado
+bash scripts/test_integration.sh                         # Kafka, MinIO, Trino y Unity Catalog reales, aislados
 ```
 
 Las reglas de orden, duplicados, borrados y valores TOAST están en [ARCHITECTURE.md](../../docs/ARCHITECTURE.md#medallion).

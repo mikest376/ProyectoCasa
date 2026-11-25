@@ -24,6 +24,12 @@
         "s3:ListMultipartUploadParts"
       ],
       "Resource": ["arn:aws:s3:::@SILVER@/*", "arn:aws:s3:::@GOLD@/*"]
+    },
+    {
+      "Sid": "TrinoMetastoreIsNotHis",
+      "Effect": "Deny",
+      "Action": ["s3:PutObject", "s3:DeleteObject"],
+      "Resource": ["arn:aws:s3:::@GOLD@/_trino_metastore/*"]
     }
   ]
 }

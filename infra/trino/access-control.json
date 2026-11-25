@@ -1,0 +1,42 @@
+{
+  "catalogs": [
+    { "user": "medallion-worker", "catalog": "lakehouse", "allow": "all" },
+    { "user": "text2sql", "catalog": "lakehouse", "allow": "read-only" },
+    { "allow": "none" }
+  ],
+  "schemas": [
+    { "user": "medallion-worker", "catalog": "lakehouse", "schema": "silver|gold", "owner": true },
+    { "owner": false }
+  ],
+  "tables": [
+    {
+      "user": "medallion-worker",
+      "catalog": "lakehouse",
+      "schema": "silver|gold",
+      "privileges": ["SELECT", "OWNERSHIP"]
+    },
+    {
+      "user": "medallion-worker",
+      "catalog": "lakehouse",
+      "schema": "information_schema",
+      "privileges": ["SELECT"]
+    },
+    { "user": "text2sql", "catalog": "lakehouse", "schema": "gold", "privileges": ["SELECT"] },
+    { "privileges": [] }
+  ],
+  "procedures": [
+    {
+      "user": "medallion-worker",
+      "catalog": "lakehouse",
+      "schema": "system",
+      "procedure": "register_table|unregister_table",
+      "privileges": ["EXECUTE"]
+    },
+    { "privileges": [] }
+  ],
+  "functions": [{ "privileges": [] }],
+  "system_information": [{ "allow": [] }],
+  "system_session_properties": [{ "allow": false }],
+  "catalog_session_properties": [{ "allow": false }],
+  "queries": [{ "user": "medallion-worker|text2sql", "allow": ["execute"] }, { "allow": [] }]
+}

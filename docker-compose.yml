@@ -1,7 +1,7 @@
 # =============================================================================
 # Odoo Data Lakehouse
 #
-# PRESUPUESTO DE MEMORIA: 15104 MiB de límites sobre los 22528 MiB de WSL.
+# PRESUPUESTO DE MEMORIA: 12864 MiB de límites sobre los 15360 MiB de WSL.
 # Un cambio de límite obliga a actualizar la tabla de CLAUDE.md en el mismo commit.
 #
 # Nada arranca sin un perfil explícito:
@@ -47,6 +47,12 @@ x-s3-env: &s3-env
   S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
   S3_REGION: ${S3_REGION:-us-east-1}
 
+# Ingesta, transformación y mantenimiento comparten imagen: un solo código que escribe Delta.
+x-worker: &worker
+  image: odoo-lakehouse/medallion-worker:dev
+  build:
+    context: ./services/medallion-worker
+
 x-odoo: &odoo
   image: odoo-lakehouse/odoo:dev
   build:
@@ -60,7 +66,7 @@ x-odoo: &odoo
   deploy:
     resources:
       limits:
-        memory: 1024M
+        memory: 768M
 
 x-odoo-env: &odoo-env
   TZ: ${TZ:-UTC}
@@ -108,7 +114,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 512M
 
   odoo:
     <<: [*service, *odoo]
@@ -266,9 +272,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 640M
 
-  # Un solo uso: crea los buckets Medallion y un usuario por servicio, y termina.
+  # Un solo uso: crea los buckets Medallion y un usuario por servicio con su política, y termina.
   minio-init:
     <<: *service
     image: *minio-image
@@ -287,6 +293,8 @@ services:
       WORKER_S3_SECRET_ACCESS_KEY: ${WORKER_S3_SECRET_ACCESS_KEY:?falta WORKER_S3_SECRET_ACCESS_KEY en .env}
       TRINO_S3_ACCESS_KEY_ID: ${TRINO_S3_ACCESS_KEY_ID:?falta TRINO_S3_ACCESS_KEY_ID en .env}
       TRINO_S3_SECRET_ACCESS_KEY: ${TRINO_S3_SECRET_ACCESS_KEY:?falta TRINO_S3_SECRET_ACCESS_KEY en .env}
+      MAINTENANCE_S3_ACCESS_KEY_ID: ${MAINTENANCE_S3_ACCESS_KEY_ID:?falta MAINTENANCE_S3_ACCESS_KEY_ID en .env}
+      MAINTENANCE_S3_SECRET_ACCESS_KEY: ${MAINTENANCE_S3_SECRET_ACCESS_KEY:?falta MAINTENANCE_S3_SECRET_ACCESS_KEY en .env}
     networks: [lakehouse]
     volumes:
       - ./infra/minio:/opt/lakehouse:ro
@@ -317,15 +325,21 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 640M
 
   # ---------------------------------------------------------------------------
   # 4 · Consulta e IA
   # ---------------------------------------------------------------------------
   trino:
     <<: *service
-    image: trinodb/trino:484
+    image: odoo-lakehouse/trino:dev
+    build:
+      context: ./infra/trino
     profiles: ["query"]
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+        required: false
     environment:
       <<: *s3-env
       S3_ACCESS_KEY_ID: ${TRINO_S3_ACCESS_KEY_ID:?falta TRINO_S3_ACCESS_KEY_ID en .env}
@@ -334,15 +348,18 @@ services:
     ports:
       - "127.0.0.1:${TRINO_PORT_HOST:-8080}:8080"
     volumes:
-      - ./infra/trino/config.properties:/etc/trino/config.properties:ro
-      - ./infra/trino/jvm.config:/etc/trino/jvm.config:ro
-      - ./infra/trino/catalog:/etc/trino/catalog:ro
       - trino-data:/data/trino
-    # Healthcheck: el que trae la propia imagen (/usr/lib/trino/bin/health-check).
+    healthcheck:
+      # La comprobación de la imagen, con más margen: en frío tarda unos 40 s en arrancar.
+      test: ["CMD", "/usr/lib/trino/bin/health-check"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
     deploy:
       resources:
         limits:
-          memory: 3072M # heap 2 GiB (jvm.config) + memoria fuera de heap
+          memory: 2560M # heap 2 GiB (jvm.config) + memoria fuera de heap
 
   ollama:
     <<: *service
@@ -372,7 +389,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4096M # el modelo 3B cabe en la GPU; margen para capas en CPU (TD-001)
+          memory: 2560M # el modelo 3B cabe en la GPU; margen para capas en CPU (TD-001)
         reservations:
           devices:
             - driver: nvidia
@@ -382,11 +399,9 @@ services:
   # ---------------------------------------------------------------------------
   # 5 · Servicios propios
   # ---------------------------------------------------------------------------
+  # Kafka -> Bronze
   medallion-worker:
-    <<: *service
-    image: odoo-lakehouse/medallion-worker:dev
-    build:
-      context: ./services/medallion-worker
+    <<: [*service, *worker]
     profiles: ["apps"]
     depends_on:
       kafka:
@@ -406,11 +421,8 @@ services:
       WORKER_BATCH_MAX_RECORDS: ${WORKER_BATCH_MAX_RECORDS:-5000}
       WORKER_BATCH_MAX_BYTES: ${WORKER_BATCH_MAX_BYTES:-33554432}
       WORKER_BATCH_MAX_SECONDS: ${WORKER_BATCH_MAX_SECONDS:-30}
+      WORKER_PARTITIONED_TABLES: ${WORKER_PARTITIONED_TABLES:-}
       S3_BUCKET_BRONZE: ${S3_BUCKET_BRONZE:-bronze}
-      S3_BUCKET_SILVER: ${S3_BUCKET_SILVER:-silver}
-      S3_BUCKET_GOLD: ${S3_BUCKET_GOLD:-gold}
-      UNITY_CATALOG_URL: ${UNITY_CATALOG_URL:-http://unity-catalog:8080}
-      UNITY_CATALOG_NAME: ${UNITY_CATALOG_NAME:-lakehouse}
       POLARS_MAX_THREADS: "4"
     networks: [lakehouse]
     healthcheck:
@@ -423,7 +435,86 @@ services:
     deploy:
       resources:
         limits:
+          memory: 384M
+
+  # Bronze -> Silver -> Gold y registro en Trino y Unity Catalog. Mismo usuario de MinIO que la
+  # ingesta, pero nunca escribe las mismas tablas.
+  medallion-transform:
+    <<: [*service, *worker]
+    profiles: ["apps"]
+    command: ["python", "-m", "medallion_worker", "transform"]
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+        required: false
+      trino:
+        condition: service_healthy
+        required: false
+      unity-catalog:
+        condition: service_healthy
+        required: false
+    environment:
+      <<: *s3-env
+      S3_ACCESS_KEY_ID: ${WORKER_S3_ACCESS_KEY_ID:?falta WORKER_S3_ACCESS_KEY_ID en .env}
+      S3_SECRET_ACCESS_KEY: ${WORKER_S3_SECRET_ACCESS_KEY:?falta WORKER_S3_SECRET_ACCESS_KEY en .env}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      WORKER_TRANSFORM_SECONDS: ${WORKER_TRANSFORM_SECONDS:-60}
+      WORKER_LANGUAGE: ${WORKER_LANGUAGE:-es_ES}
+      S3_BUCKET_BRONZE: ${S3_BUCKET_BRONZE:-bronze}
+      S3_BUCKET_SILVER: ${S3_BUCKET_SILVER:-silver}
+      S3_BUCKET_GOLD: ${S3_BUCKET_GOLD:-gold}
+      TRINO_URL: http://${TRINO_HOST:-trino}:${TRINO_PORT:-8080}
+      TRINO_CATALOG: ${TRINO_CATALOG:-lakehouse}
+      UNITY_CATALOG_URL: ${UNITY_CATALOG_URL:-http://unity-catalog:8080}
+      UNITY_CATALOG_NAME: ${UNITY_CATALOG_NAME:-lakehouse}
+      POLARS_MAX_THREADS: "4"
+    networks: [lakehouse]
+    healthcheck:
+      # Deja de pasar si un contrato de Silver se incumple (TD-011).
+      test: ["CMD-SHELL", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/medallion-worker.alive) )) -lt 300"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
           memory: 512M
+
+  # Compactación y limpieza diarias de Bronze, con un usuario de MinIO propio (TD-007).
+  bronze-maintenance:
+    <<: [*service, *worker]
+    profiles: ["apps"]
+    command: ["python", "-m", "medallion_worker", "maintain"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+        required: false
+      minio-init:
+        condition: service_completed_successfully
+        required: false
+    environment:
+      <<: *s3-env
+      S3_ACCESS_KEY_ID: ${MAINTENANCE_S3_ACCESS_KEY_ID:?falta MAINTENANCE_S3_ACCESS_KEY_ID en .env}
+      S3_SECRET_ACCESS_KEY: ${MAINTENANCE_S3_SECRET_ACCESS_KEY:?falta MAINTENANCE_S3_SECRET_ACCESS_KEY en .env}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:19092}
+      WORKER_CONSUMER_GROUP: ${WORKER_CONSUMER_GROUP:-medallion-worker}
+      WORKER_PARTITIONED_TABLES: ${WORKER_PARTITIONED_TABLES:-}
+      WORKER_MAINTENANCE_HOUR: ${WORKER_MAINTENANCE_HOUR:-3}
+      S3_BUCKET_BRONZE: ${S3_BUCKET_BRONZE:-bronze}
+      POLARS_MAX_THREADS: "2"
+    networks: [lakehouse]
+    healthcheck:
+      test: ["CMD-SHELL", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/medallion-worker.alive) )) -lt 120"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
 
   backend:
     <<: *service
@@ -521,7 +612,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 192M
 
   # Solo en 127.0.0.1: Caddy no lo publica. Las trazas incluyen prompts y SQL.
   langfuse:
@@ -564,7 +655,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 640M
 
   # ---------------------------------------------------------------------------
   # 7 · Entrada externa (ver README, exposición para la defensa del TFG)

@@ -5,7 +5,8 @@
 #   scripts/validate.sh            todo
 #   scripts/validate.sh --quick    sin construir las imágenes propias
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 2
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd) || exit 2
+cd "$ROOT" || exit 2
 
 SHELLCHECK_IMAGE=koalaman/shellcheck:v0.11.0
 HADOLINT_IMAGE=hadolint/hadolint:v2.15.1-alpine
@@ -17,6 +18,9 @@ failures=0
 run() {
     local name=$1 output
     shift
+    # En WSL, Docker Desktop vuelve a montar la unidad de Windows la primera vez que la usa tras
+    # reiniciarse, y el directorio actual deja de existir: se entra de nuevo por la ruta absoluta.
+    cd "$ROOT" || exit 2
     if output=$("$@" 2>&1); then
         printf '  \033[32mOK\033[0m     %s\n' "$name"
     else
@@ -34,7 +38,7 @@ import json, sys
 services = json.load(sys.stdin)["services"]
 total = sum(int(s["deploy"]["resources"]["limits"]["memory"]) for n, s in services.items() if not n.endswith("-init")) // 2**20
 print(total)
-sys.exit(total > 20480)'
+sys.exit(total > 13312)'
 }
 
 # Las credenciales raíz de MinIO no salen de minio y minio-init (TD-014).

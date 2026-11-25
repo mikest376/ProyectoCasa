@@ -3,24 +3,24 @@
 import logging
 import time
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from datetime import UTC, datetime
 from typing import Protocol
 
 import polars as pl
 from deltalake import DeltaTable, WriterProperties, write_deltalake
-from deltalake.schema import Field, PrimitiveType, Schema
 
 from medallion_worker.batching import TopicBatch
-from medallion_worker.config import Settings
 from medallion_worker.events import BronzeEvent, RejectedEvent, table_name
+from medallion_worker.storage import Columns, delta_schema
 
 logger = logging.getLogger(__name__)
 
 # Un topic nunca produce una tabla con este nombre: Odoo no crea tablas con guion bajo inicial.
 REJECTED_TABLE = "_rejected"
+PARTITION = "_ingested_date"
 
-EVENT_COLUMNS = {
+EVENT_COLUMNS: dict[str, pl.DataType] = {
     "_topic": pl.String(),
     "_partition": pl.Int32(),
     "_offset": pl.Int64(),
@@ -32,7 +32,7 @@ EVENT_COLUMNS = {
     "before": pl.String(),
     "after": pl.String(),
 }
-REJECTED_COLUMNS = {
+REJECTED_COLUMNS: dict[str, pl.DataType] = {
     "_topic": pl.String(),
     "_partition": pl.Int32(),
     "_offset": pl.Int64(),
@@ -41,20 +41,13 @@ REJECTED_COLUMNS = {
     "key": pl.Binary(),
     "value": pl.Binary(),
 }
-DELTA_TYPES = {
-    pl.String(): "string",
-    pl.Int32(): "integer",
-    pl.Int64(): "long",
-    pl.Binary(): "binary",
-    pl.Datetime("us", "UTC"): "timestamp",
-}
 REQUIRED = frozenset({"_topic", "_partition", "_offset", "_ingested_at", "op", "reason"})
 
 TABLE_PROPERTIES = {
     # Regla 4 de CLAUDE.md: Bronze no se modifica. El protocolo Delta rechaza UPDATE y DELETE.
     "delta.appendOnly": "true",
-    # El usuario de MinIO del worker no puede borrar en Bronze (TD-014). La limpieza del
-    # registro y la compactación llegan en la Fase 3 (TD-007).
+    # El usuario de MinIO del worker no puede borrar en Bronze (TD-014). De la limpieza se
+    # encarga bronze-maintenance, con su propio usuario (TD-007).
     "delta.enableExpiredLogCleanup": "false",
 }
 
@@ -62,20 +55,6 @@ TABLE_PROPERTIES = {
 class BronzeSink(Protocol):
     def write(self, batch: TopicBatch) -> None:
         """Al volver, el lote está a salvo: el consumidor puede confirmar sus offsets."""
-
-
-def storage_options(settings: Settings) -> dict[str, str]:
-    return {
-        "AWS_ENDPOINT_URL": settings.s3_endpoint_url,
-        "AWS_REGION": settings.s3_region,
-        "AWS_ACCESS_KEY_ID": settings.s3_access_key_id.get_secret_value(),
-        "AWS_SECRET_ACCESS_KEY": settings.s3_secret_access_key.get_secret_value(),
-        # Dentro de la red de Docker no hay TLS (TD-014).
-        "AWS_ALLOW_HTTP": str(settings.s3_endpoint_url.startswith("http://")).lower(),
-        "AWS_VIRTUAL_HOSTED_STYLE_REQUEST": "false",
-        # Escritura condicional: dos commits con el mismo número de versión no se pisan.
-        "aws_conditional_put": "etag",
-    }
 
 
 def event_frame(events: Sequence[BronzeEvent], ingested_at: datetime) -> pl.DataFrame:
@@ -111,28 +90,34 @@ def rejected_frame(events: Sequence[RejectedEvent], ingested_at: datetime) -> pl
     )
 
 
-def delta_schema(columns: dict[str, pl.DataType]) -> Schema:
-    return Schema(
-        [
-            Field(name, PrimitiveType(DELTA_TYPES[dtype]), nullable=name not in REQUIRED)
-            for name, dtype in columns.items()
-        ]
-    )
+def with_partition(frame: pl.DataFrame) -> pl.DataFrame:
+    return frame.with_columns(pl.col("_ingested_at").dt.date().alias(PARTITION))
+
+
+def _columns(types: dict[str, pl.DataType]) -> Columns:
+    return [(name, dtype, "") for name, dtype in types.items()]
 
 
 class DeltaSink:
-    """Una tabla Delta por topic, en modo append-only: <base>/<tabla>."""
+    """Una tabla Delta por topic, en modo append-only: <base>/<tabla>.
+
+    Las tablas de mayor volumen se crean particionadas por fecha de ingesta (TD-007). En una
+    tabla que ya existe manda su partición real, no la configuración.
+    """
 
     def __init__(
         self,
         base_uri: str,
         options: dict[str, str] | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(tz=UTC),
+        partitioned: Collection[str] = (),
     ) -> None:
         self._base_uri = base_uri.rstrip("/")
         self._options = options
         self._now = now
-        self._known: set[str] = set()
+        self._partitioned = frozenset(partitioned)
+        # Tabla -> si está particionada.
+        self._known: dict[str, bool] = {}
 
     def write(self, batch: TopicBatch) -> None:
         started = time.monotonic()
@@ -160,24 +145,31 @@ class DeltaSink:
             },
         )
 
+    def _open(self, table: str, uri: str, columns: dict[str, pl.DataType], origin: str) -> bool:
+        partition = table in self._partitioned
+        types = columns | {PARTITION: pl.Date()} if partition else columns
+        DeltaTable.create(
+            uri,
+            schema=delta_schema(_columns(types), REQUIRED),
+            mode="ignore",
+            partition_by=[PARTITION] if partition else None,
+            name=table,
+            description=f"Bronze: eventos CDC crudos de {origin}",
+            configuration=TABLE_PROPERTIES,
+            storage_options=self._options,
+        )
+        existing = DeltaTable(uri, storage_options=self._options)
+        return existing.metadata().partition_columns == [PARTITION]
+
     def _append(
         self, table: str, columns: dict[str, pl.DataType], frame: pl.DataFrame, origin: str
     ) -> None:
         uri = f"{self._base_uri}/{table}"
         if table not in self._known:
-            DeltaTable.create(
-                uri,
-                schema=delta_schema(columns),
-                mode="ignore",
-                name=table,
-                description=f"Bronze: eventos CDC crudos de {origin}",
-                configuration=TABLE_PROPERTIES,
-                storage_options=self._options,
-            )
-            self._known.add(table)
+            self._known[table] = self._open(table, uri, columns, origin)
         write_deltalake(
             uri,
-            frame,
+            with_partition(frame) if self._known[table] else frame,
             mode="append",
             storage_options=self._options,
             writer_properties=WriterProperties(compression="ZSTD"),
