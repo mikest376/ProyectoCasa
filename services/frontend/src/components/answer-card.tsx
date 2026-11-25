@@ -153,7 +153,14 @@ export function ProblemCard({ question, problem }: { question: string; problem: 
         </Callout>
       </div>
       {problem.sql !== null && (
-        <SqlPanel title="SQL propuesto por el modelo, sin ejecutar" sql={problem.sql} />
+        <SqlPanel
+          title={
+            problem.code === "sql_rejected"
+              ? "SQL propuesto por el modelo, sin ejecutar"
+              : "Último SQL propuesto por el modelo"
+          }
+          sql={problem.sql}
+        />
       )}
     </Card>
   );
