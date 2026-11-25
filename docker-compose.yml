@@ -39,11 +39,10 @@ x-service: &service
       max-size: "10m"
       max-file: "3"
 
+# Las credenciales no son comunes: cada servicio usa su usuario de MinIO (TD-014).
 x-s3-env: &s3-env
   S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
   S3_REGION: ${S3_REGION:-us-east-1}
-  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?falta S3_ACCESS_KEY_ID en .env}
-  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?falta S3_SECRET_ACCESS_KEY en .env}
 
 x-odoo: &odoo
   image: odoo:17.0-20260908
@@ -265,7 +264,7 @@ services:
         limits:
           memory: 1024M
 
-  # Un solo uso: crea los buckets Medallion y termina.
+  # Un solo uso: crea los buckets Medallion y un usuario por servicio, y termina.
   minio-init:
     <<: *service
     image: *minio-image
@@ -276,16 +275,18 @@ services:
         condition: service_healthy
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?falta MINIO_ROOT_USER en .env}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?falta MINIO_ROOT_PASSWORD en .env}
-      BUCKETS: ${S3_BUCKET_BRONZE:-bronze} ${S3_BUCKET_SILVER:-silver} ${S3_BUCKET_GOLD:-gold}
+      MC_HOST_lake: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD:?falta MINIO_ROOT_PASSWORD en .env}@minio:9000
+      S3_BUCKET_BRONZE: ${S3_BUCKET_BRONZE:-bronze}
+      S3_BUCKET_SILVER: ${S3_BUCKET_SILVER:-silver}
+      S3_BUCKET_GOLD: ${S3_BUCKET_GOLD:-gold}
+      WORKER_S3_ACCESS_KEY_ID: ${WORKER_S3_ACCESS_KEY_ID:?falta WORKER_S3_ACCESS_KEY_ID en .env}
+      WORKER_S3_SECRET_ACCESS_KEY: ${WORKER_S3_SECRET_ACCESS_KEY:?falta WORKER_S3_SECRET_ACCESS_KEY en .env}
+      TRINO_S3_ACCESS_KEY_ID: ${TRINO_S3_ACCESS_KEY_ID:?falta TRINO_S3_ACCESS_KEY_ID en .env}
+      TRINO_S3_SECRET_ACCESS_KEY: ${TRINO_S3_SECRET_ACCESS_KEY:?falta TRINO_S3_SECRET_ACCESS_KEY en .env}
     networks: [lakehouse]
-    entrypoint: ["/usr/bin/bash", "-euc"]
-    command:
-      - |
-        mc alias set lake http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
-        for bucket in $$BUCKETS; do
-          mc mb --ignore-existing "lake/$$bucket"
-        done
+    volumes:
+      - ./infra/minio:/opt/lakehouse:ro
+    entrypoint: ["/usr/bin/bash", "/opt/lakehouse/init.sh"]
     deploy:
       resources:
         limits:
@@ -323,6 +324,8 @@ services:
     profiles: ["query"]
     environment:
       <<: *s3-env
+      S3_ACCESS_KEY_ID: ${TRINO_S3_ACCESS_KEY_ID:?falta TRINO_S3_ACCESS_KEY_ID en .env}
+      S3_SECRET_ACCESS_KEY: ${TRINO_S3_SECRET_ACCESS_KEY:?falta TRINO_S3_SECRET_ACCESS_KEY en .env}
     networks: [lakehouse]
     ports:
       - "127.0.0.1:${TRINO_PORT_HOST:-8080}:8080"
@@ -385,19 +388,19 @@ services:
       kafka:
         condition: service_healthy
         required: false
-      minio:
-        condition: service_healthy
-        required: false
-      unity-catalog:
-        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
         required: false
     environment:
       <<: *s3-env
+      S3_ACCESS_KEY_ID: ${WORKER_S3_ACCESS_KEY_ID:?falta WORKER_S3_ACCESS_KEY_ID en .env}
+      S3_SECRET_ACCESS_KEY: ${WORKER_S3_SECRET_ACCESS_KEY:?falta WORKER_S3_SECRET_ACCESS_KEY en .env}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:19092}
       WORKER_CONSUMER_GROUP: ${WORKER_CONSUMER_GROUP:-medallion-worker}
       WORKER_TOPIC_PATTERN: ${WORKER_TOPIC_PATTERN:-}
       WORKER_BATCH_MAX_RECORDS: ${WORKER_BATCH_MAX_RECORDS:-5000}
+      WORKER_BATCH_MAX_BYTES: ${WORKER_BATCH_MAX_BYTES:-33554432}
       WORKER_BATCH_MAX_SECONDS: ${WORKER_BATCH_MAX_SECONDS:-30}
       S3_BUCKET_BRONZE: ${S3_BUCKET_BRONZE:-bronze}
       S3_BUCKET_SILVER: ${S3_BUCKET_SILVER:-silver}

@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListBuckets",
+      "Effect": "Allow",
+      "Action": ["s3:GetBucketLocation", "s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::@BRONZE@", "arn:aws:s3:::@SILVER@", "arn:aws:s3:::@GOLD@"]
+    },
+    {
+      "Sid": "AppendToBronze",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+      "Resource": ["arn:aws:s3:::@BRONZE@/*"]
+    },
+    {
+      "Sid": "WriteSilverAndGold",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts"
+      ],
+      "Resource": ["arn:aws:s3:::@SILVER@/*", "arn:aws:s3:::@GOLD@/*"]
+    }
+  ]
+}
