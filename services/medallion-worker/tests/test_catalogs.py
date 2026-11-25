@@ -87,6 +87,8 @@ class FakeUnity:
             return self.page(request)
         elif path.startswith("/tables/") and request.method == "DELETE":
             del self.tables[path.removeprefix("/tables/")]
+            # Como Unity Catalog 0.7: no es JSON.
+            return httpx.Response(200, text="200 OK")
         elif path.startswith("/catalogs/"):
             return httpx.Response(200 if path[10:] in self.catalogs else 404, json={})
         elif path.startswith("/schemas/"):

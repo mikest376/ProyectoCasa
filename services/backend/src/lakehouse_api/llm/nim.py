@@ -10,7 +10,14 @@ from typing import Any
 import httpx
 
 from lakehouse_api.config import Settings
-from lakehouse_api.llm.base import ChatMessage, LLMError, post_json, require_text
+from lakehouse_api.llm.base import (
+    ChatMessage,
+    Completion,
+    LLMError,
+    post_json,
+    require_text,
+    token_count,
+)
 
 
 class NimClient:
@@ -27,7 +34,12 @@ class NimClient:
         self._timeout = settings.llm_request_timeout_seconds
         self._http = http
 
-    async def complete(self, messages: Sequence[ChatMessage]) -> str:
+    async def complete(
+        self, messages: Sequence[ChatMessage], schema: dict[str, Any] | None = None
+    ) -> Completion:
+        # El catálogo de NIM no garantiza salida estructurada en todos sus modelos: el prompt pide
+        # JSON y la API comprueba el formato al recibirlo (TD-021, sin probar con una clave).
+        del schema
         data = await post_json(
             self._http,
             self._url,
@@ -42,7 +54,13 @@ class NimClient:
             max_seconds=self._timeout,
             headers={"Authorization": f"Bearer {self._api_key.get_secret_value()}"},
         )
-        return require_text(_first_content(data), self.provider)
+        usage = data.get("usage")
+        counts = usage if isinstance(usage, dict) else {}
+        return Completion(
+            require_text(_first_content(data), self.provider),
+            token_count(counts.get("prompt_tokens")),
+            token_count(counts.get("completion_tokens")),
+        )
 
 
 def _first_content(data: dict[str, Any]) -> Any:

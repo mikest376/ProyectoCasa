@@ -231,7 +231,8 @@ class UnityClient:
             raise CatalogError(
                 f"unity: {method} {path}: HTTP {response.status_code}: {response.text[:200]}"
             )
-        data: dict[str, Any] = response.json() if response.content else {}
+        # DELETE responde con el texto "200 OK", que no es JSON.
+        data: dict[str, Any] = response.json() if method == "GET" else {}
         return data
 
     def ensure_schemas(self) -> int:

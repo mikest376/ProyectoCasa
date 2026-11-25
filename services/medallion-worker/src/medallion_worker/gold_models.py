@@ -1,8 +1,10 @@
 """Modelos Gold: qué contiene cada tabla, a partir de qué tablas Silver y cómo se calcula.
 
 Están desnormalizados: los nombres de cliente, producto y comercial se repiten en los hechos para
-que una pregunta se resuelva casi siempre sin JOIN. Las descripciones llegan al prompt de
-Text-to-SQL a través de Unity Catalog: indican los valores posibles y cuándo usar cada columna.
+que una pregunta se resuelva casi siempre sin JOIN. Y cada tabla responde por sí sola, sin filtros
+obligatorios: los pedidos no incluyen presupuestos ni las facturas, abonos. Las descripciones
+llegan al prompt de Text-to-SQL a través de Unity Catalog: indican los valores posibles y cuándo
+usar cada columna.
 """
 
 from collections.abc import Callable
@@ -100,19 +102,9 @@ def _in_company_currency(column: str) -> pl.Expr:
     )
 
 
-ORDER_STATUS = {
-    "draft": "quotation",
-    "sent": "quotation",
-    "sale": "confirmed",
-    "done": "confirmed",
-    "cancel": "cancelled",
-}
-INVOICE_STATUS = {
-    "no": "nothing_to_invoice",
-    "to invoice": "to_invoice",
-    "invoiced": "invoiced",
-    "upselling": "upselling",
-}
+CONFIRMED = ("sale", "done")
+PRIORITY = {"0": "baja", "1": "media", "2": "alta", "3": "muy alta"}
+QUOTATION_STATUS = {"draft": "open", "sent": "open", "cancel": "cancelled"}
 
 
 # --- Maestros -----------------------------------------------------------------------------------
@@ -147,45 +139,59 @@ def _dim_salesperson(frames: Frames) -> pl.DataFrame:
 # --- Ventas -------------------------------------------------------------------------------------
 
 
-def _orders(frames: Frames) -> pl.DataFrame:
+def _orders(frames: Frames, *, confirmed: bool) -> pl.DataFrame:
+    state = pl.col("state").is_in(CONFIRMED)
     return (
         frames["sale_order"]
+        .filter(state if confirmed else ~state)
         .join(_partners(frames, "partner_id"), on="partner_id", how="left")
         .join(_salespeople(frames, "user_id"), on="user_id", how="left")
-        .with_columns(
-            _label("state", ORDER_STATUS).alias("order_status"),
-            _day("date_order").alias("order_date"),
-        )
-        .with_columns((pl.col("order_status") == "confirmed").alias("is_confirmed"))
+        .with_columns(_day("date_order").alias("order_date"))
     )
 
 
 def _fact_sales_orders(frames: Frames) -> pl.DataFrame:
-    return _orders(frames).select(
+    return _orders(frames, confirmed=True).select(
         pl.col("id").alias("order_id"),
         pl.col("name").alias("order_number"),
         "order_date",
-        "order_status",
-        "is_confirmed",
         pl.col("partner_id").alias("customer_id"),
         "customer_name",
-        "customer_city",
+        pl.col("customer_city").alias("city"),
         "salesperson_name",
         _in_company_currency("amount_untaxed").alias("amount_untaxed"),
         _in_company_currency("amount_tax").alias("amount_tax"),
         _in_company_currency("amount_total").alias("amount_total"),
-        _label("invoice_status", INVOICE_STATUS).alias("invoice_status"),
-        pl.col("delivery_status"),
+        # Siempre cierto: si el modelo filtra por pedidos confirmados, el resultado no cambia.
+        pl.lit(True).alias("is_confirmed"),
+        (pl.col("invoice_status") == "to invoice").fill_null(False).alias("is_pending_invoicing"),
+        pl.col("delivery_status")
+        .is_in(["pending", "partial"])
+        .fill_null(False)
+        .alias("is_pending_delivery"),
+    )
+
+
+def _fact_quotations(frames: Frames) -> pl.DataFrame:
+    return _orders(frames, confirmed=False).select(
+        pl.col("id").alias("quotation_id"),
+        pl.col("name").alias("quotation_number"),
+        pl.col("order_date").alias("quotation_date"),
+        pl.col("validity_date").alias("valid_until"),
+        _label("state", QUOTATION_STATUS).alias("quotation_status"),
+        pl.col("partner_id").alias("customer_id"),
+        "customer_name",
+        "salesperson_name",
+        _in_company_currency("amount_untaxed").alias("amount_untaxed"),
+        _in_company_currency("amount_total").alias("amount_total"),
     )
 
 
 def _fact_sales_order_lines(frames: Frames) -> pl.DataFrame:
-    orders = _orders(frames).select(
+    orders = _orders(frames, confirmed=True).select(
         pl.col("id").alias("order_id"),
         pl.col("name").alias("order_number"),
         "order_date",
-        "order_status",
-        "is_confirmed",
         pl.col("partner_id").alias("customer_id"),
         "customer_name",
         "salesperson_name",
@@ -202,8 +208,6 @@ def _fact_sales_order_lines(frames: Frames) -> pl.DataFrame:
             "order_id",
             "order_number",
             "order_date",
-            "order_status",
-            "is_confirmed",
             "customer_id",
             "customer_name",
             "salesperson_name",
@@ -212,8 +216,6 @@ def _fact_sales_order_lines(frames: Frames) -> pl.DataFrame:
             "sku",
             "product_type",
             pl.col("product_uom_qty").alias("quantity"),
-            pl.col("qty_delivered").alias("quantity_delivered"),
-            pl.col("qty_invoiced").alias("quantity_invoiced"),
             _in_company_currency("price_unit").alias("unit_price"),
             pl.col("discount").alias("discount_percent"),
             _in_company_currency("price_subtotal").alias("amount_untaxed"),
@@ -225,7 +227,6 @@ def _fact_sales_order_lines(frames: Frames) -> pl.DataFrame:
 def _agg_sales_monthly(frames: Frames) -> pl.DataFrame:
     return (
         _fact_sales_orders(frames)
-        .filter("is_confirmed")
         .group_by(pl.col("order_date").dt.truncate("1mo").alias("month"))
         .agg(
             pl.len().alias("orders"),
@@ -240,36 +241,48 @@ def _agg_sales_monthly(frames: Frames) -> pl.DataFrame:
 # --- Facturación --------------------------------------------------------------------------------
 
 
-def _invoices(frames: Frames, kinds: dict[str, str]) -> pl.DataFrame:
+def _documents(frames: Frames, move_type: str) -> pl.DataFrame:
+    """Documentos contabilizados de un tipo, con importes en positivo y en moneda de la empresa."""
     return (
         frames["account_move"]
-        .filter(pl.col("move_type").is_in(list(kinds)) & (pl.col("state") == "posted"))
+        .filter((pl.col("move_type") == move_type) & (pl.col("state") == "posted"))
         .join(_partners(frames, "partner_id"), on="partner_id", how="left")
         .join(_salespeople(frames, "invoice_user_id"), on="invoice_user_id", how="left")
-        .with_columns(_label("move_type", kinds).alias("document_type"))
+        .with_columns(
+            pl.col(f"{name}_signed").abs().alias(name)
+            for name in ("amount_untaxed", "amount_tax", "amount_total", "amount_residual")
+        )
     )
 
 
-CUSTOMER_DOCUMENTS = {"out_invoice": "invoice", "out_refund": "credit_note"}
-VENDOR_DOCUMENTS = {"in_invoice": "bill", "in_refund": "credit_note"}
-
-
 def _fact_customer_invoices(frames: Frames) -> pl.DataFrame:
-    return _invoices(frames, CUSTOMER_DOCUMENTS).select(
+    return _documents(frames, "out_invoice").select(
         pl.col("id").alias("invoice_id"),
         pl.col("name").alias("invoice_number"),
-        "document_type",
         "invoice_date",
         pl.col("invoice_date_due").alias("due_date"),
         pl.col("partner_id").alias("customer_id"),
         "customer_name",
-        "customer_city",
+        pl.col("customer_city").alias("city"),
         "salesperson_name",
-        pl.col("amount_untaxed_signed").abs().alias("amount_untaxed"),
-        pl.col("amount_tax_signed").abs().alias("amount_tax"),
-        pl.col("amount_total_signed").abs().alias("amount_total"),
-        pl.col("amount_residual_signed").abs().alias("amount_due"),
-        pl.col("amount_total_signed").alias("net_amount"),
+        "amount_untaxed",
+        "amount_tax",
+        "amount_total",
+        pl.col("amount_residual").alias("amount_due"),
+        "payment_state",
+    )
+
+
+def _fact_customer_credit_notes(frames: Frames) -> pl.DataFrame:
+    return _documents(frames, "out_refund").select(
+        pl.col("id").alias("credit_note_id"),
+        pl.col("name").alias("credit_note_number"),
+        pl.col("invoice_date").alias("credit_note_date"),
+        pl.col("partner_id").alias("customer_id"),
+        "customer_name",
+        "amount_untaxed",
+        "amount_total",
+        pl.col("amount_residual").alias("amount_due"),
         "payment_state",
     )
 
@@ -278,7 +291,6 @@ def _fact_customer_invoice_lines(frames: Frames) -> pl.DataFrame:
     invoices = _fact_customer_invoices(frames).select(
         pl.col("invoice_id").alias("move_id"),
         "invoice_number",
-        "document_type",
         "invoice_date",
         "customer_id",
         "customer_name",
@@ -293,7 +305,6 @@ def _fact_customer_invoice_lines(frames: Frames) -> pl.DataFrame:
             pl.col("id").alias("line_id"),
             pl.col("move_id").alias("invoice_id"),
             "invoice_number",
-            "document_type",
             "invoice_date",
             "customer_id",
             "customer_name",
@@ -302,42 +313,49 @@ def _fact_customer_invoice_lines(frames: Frames) -> pl.DataFrame:
             "product_type",
             "quantity",
             pl.col("price_unit").alias("unit_price"),
-            # El haber de una venta es negativo en el saldo: se guarda en positivo.
-            pl.col("balance").abs().alias("amount_untaxed"),
-            (-pl.col("balance")).alias("net_amount"),
+            # El haber de una venta es negativo en el saldo contable.
+            (-pl.col("balance")).alias("amount_untaxed"),
         )
     )
 
 
 def _fact_vendor_bills(frames: Frames) -> pl.DataFrame:
-    return _invoices(frames, VENDOR_DOCUMENTS).select(
+    return _documents(frames, "in_invoice").select(
         pl.col("id").alias("bill_id"),
         pl.col("name").alias("bill_number"),
-        "document_type",
         pl.col("invoice_date").alias("bill_date"),
         pl.col("invoice_date_due").alias("due_date"),
         pl.col("partner_id").alias("vendor_id"),
         pl.col("customer_name").alias("vendor_name"),
-        pl.col("amount_untaxed_signed").abs().alias("amount_untaxed"),
-        pl.col("amount_total_signed").abs().alias("amount_total"),
-        pl.col("amount_residual_signed").abs().alias("amount_due"),
+        "amount_untaxed",
+        "amount_total",
+        pl.col("amount_residual").alias("amount_due"),
         "payment_state",
     )
 
 
 def _agg_invoicing_monthly(frames: Frames) -> pl.DataFrame:
-    invoice = pl.col("document_type") == "invoice"
+    invoices = _fact_customer_invoices(frames).select(
+        pl.col("invoice_date").alias("day"),
+        pl.col("amount_total").alias("invoiced"),
+        pl.lit(None, pl.Decimal(20, 6)).alias("credited"),
+    )
+    credits = _fact_customer_credit_notes(frames).select(
+        pl.col("credit_note_date").alias("day"),
+        pl.lit(None, pl.Decimal(20, 6)).alias("invoiced"),
+        pl.col("amount_total").alias("credited"),
+    )
     return (
-        _fact_customer_invoices(frames)
-        .filter(pl.col("invoice_date").is_not_null())
-        .group_by(pl.col("invoice_date").dt.truncate("1mo").alias("month"))
+        pl.concat([invoices, credits])
+        .filter(pl.col("day").is_not_null())
+        .group_by(pl.col("day").dt.truncate("1mo").alias("month"))
         .agg(
-            invoice.sum().alias("invoices"),
-            (~invoice).sum().alias("credit_notes"),
-            pl.col("amount_total").filter(invoice).sum().alias("invoiced_amount"),
-            pl.col("amount_total").filter(~invoice).sum().alias("credited_amount"),
-            pl.col("net_amount").sum(),
+            pl.col("invoiced").count().alias("invoices"),
+            pl.col("credited").count().alias("credit_notes"),
+            pl.col("invoiced").sum().alias("invoiced_amount"),
+            pl.col("credited").sum().alias("credited_amount"),
         )
+        .with_columns((pl.col("invoiced_amount") - pl.col("credited_amount")).alias("net_amount"))
         .sort("month")
     )
 
@@ -430,6 +448,7 @@ def _fact_stock_moves(frames: Frames) -> pl.DataFrame:
             .then(pl.lit("internal"))
             .otherwise(pl.lit("other"))
             .alias("move_type"),
+            (~pl.col("state").is_in(["done", "cancel"])).alias("is_pending"),
             "product_id",
             "product_name",
             "sku",
@@ -472,7 +491,7 @@ def _fact_opportunities(frames: Frames) -> pl.DataFrame:
         pl.col("company_name").alias("customer_name"),
         pl.col("lead_city").alias("city"),
         "salesperson_name",
-        pl.col("priority").cast(pl.Int32),
+        _label("priority", PRIORITY).alias("priority"),
         pl.col("probability").round(2).cast(pl.String).cast(PERCENT).alias("probability"),
         "expected_revenue",
         pl.col("prorated_revenue").alias("weighted_revenue"),
@@ -502,7 +521,6 @@ def _fact_leads(frames: Frames) -> pl.DataFrame:
 
 _PARTY = ("res_partner", "res_users")
 _PRODUCT = ("product_product", "product_template")
-_CONFIRMED = "Verdadero si es una venta real (pedido confirmado); falso si es presupuesto"
 
 MODELS: tuple[Model, ...] = (
     Model(
@@ -538,43 +556,55 @@ MODELS: tuple[Model, ...] = (
     Model(
         "fact_sales_orders",
         "ventas",
-        "Pedidos de venta y presupuestos. Una fila por pedido. "
-        "Para ventas, filtra is_confirmed = true y suma amount_total.",
+        "Pedidos de venta confirmados, sin presupuestos ni cancelados. Una fila por pedido.",
         (
             ("order_id", INT, "Identificador del pedido"),
             ("order_number", TEXT, "Número del pedido"),
             ("order_date", DATE, "Fecha del pedido"),
-            ("order_status", TEXT, "Estado: 'quotation', 'confirmed' o 'cancelled'"),
-            ("is_confirmed", BOOL, _CONFIRMED),
             ("customer_id", INT, "Identificador del cliente"),
             ("customer_name", TEXT, "Nombre del cliente"),
-            ("customer_city", TEXT, "Ciudad del cliente"),
+            ("city", TEXT, "Ciudad del cliente"),
             ("salesperson_name", TEXT, "Nombre del comercial"),
             ("amount_untaxed", MONEY, "Importe sin impuestos"),
             ("amount_tax", MONEY, "Impuestos"),
             ("amount_total", MONEY, "Importe total con impuestos"),
-            (
-                "invoice_status",
-                TEXT,
-                "Facturación: 'nothing_to_invoice', 'to_invoice', 'invoiced' o 'upselling'",
-            ),
-            ("delivery_status", TEXT, "Entrega: 'pending', 'partial', 'full' o nulo"),
+            ("is_confirmed", BOOL, "Siempre verdadero: solo hay pedidos confirmados"),
+            ("is_pending_invoicing", BOOL, "Verdadero si falta facturar el pedido"),
+            ("is_pending_delivery", BOOL, "Verdadero si falta entregar el pedido"),
         ),
         ("sale_order", *_PARTY),
         _fact_sales_orders,
+        revision=5,
+    ),
+    Model(
+        "fact_quotations",
+        "ventas",
+        "Presupuestos que no se han convertido en pedido. Una fila por presupuesto.",
+        (
+            ("quotation_id", INT, "Identificador del presupuesto"),
+            ("quotation_number", TEXT, "Número del presupuesto"),
+            ("quotation_date", DATE, "Fecha del presupuesto"),
+            ("valid_until", DATE, "Fecha de validez"),
+            ("quotation_status", TEXT, "Estado: 'open' (abierto) o 'cancelled' (cancelado)"),
+            ("customer_id", INT, "Identificador del cliente"),
+            ("customer_name", TEXT, "Nombre del cliente"),
+            ("salesperson_name", TEXT, "Nombre del comercial"),
+            ("amount_untaxed", MONEY, "Importe sin impuestos"),
+            ("amount_total", MONEY, "Importe total con impuestos"),
+        ),
+        ("sale_order", *_PARTY),
+        _fact_quotations,
     ),
     Model(
         "fact_sales_order_lines",
         "ventas",
-        "Líneas de pedido: qué producto se vendió, a quién y por cuánto. Una fila por línea. "
-        "Úsala para ventas por producto, con is_confirmed = true.",
+        "Líneas de los pedidos confirmados: qué producto se vendió, a quién y por cuánto. "
+        "Una fila por línea. Úsala para ventas por producto o unidades vendidas.",
         (
             ("line_id", INT, "Identificador de la línea"),
             ("order_id", INT, "Identificador del pedido"),
             ("order_number", TEXT, "Número del pedido"),
             ("order_date", DATE, "Fecha del pedido"),
-            ("order_status", TEXT, "Estado: 'quotation', 'confirmed' o 'cancelled'"),
-            ("is_confirmed", BOOL, _CONFIRMED),
             ("customer_id", INT, "Identificador del cliente"),
             ("customer_name", TEXT, "Nombre del cliente"),
             ("salesperson_name", TEXT, "Nombre del comercial"),
@@ -582,9 +612,7 @@ MODELS: tuple[Model, ...] = (
             ("product_name", TEXT, "Nombre del producto"),
             ("sku", TEXT, "Referencia del producto"),
             ("product_type", TEXT, "Tipo: 'storable', 'consumable' o 'service'"),
-            ("quantity", QUANTITY, "Unidades pedidas"),
-            ("quantity_delivered", QUANTITY, "Unidades entregadas"),
-            ("quantity_invoiced", QUANTITY, "Unidades facturadas"),
+            ("quantity", QUANTITY, "Unidades vendidas"),
             ("unit_price", MONEY, "Precio unitario"),
             ("discount_percent", PERCENT, "Descuento en porcentaje"),
             ("amount_untaxed", MONEY, "Importe de la línea sin impuestos"),
@@ -592,6 +620,7 @@ MODELS: tuple[Model, ...] = (
         ),
         ("sale_order", "sale_order_line", *_PRODUCT, *_PARTY),
         _fact_sales_order_lines,
+        revision=4,
     ),
     Model(
         "agg_sales_monthly",
@@ -610,42 +639,57 @@ MODELS: tuple[Model, ...] = (
     Model(
         "fact_customer_invoices",
         "facturacion",
-        "Facturas y abonos de clientes contabilizados. Una fila por documento. Facturación: "
-        "suma amount_total con document_type = 'invoice'. Facturación neta: suma net_amount.",
+        "Facturas de clientes contabilizadas, sin abonos. Una fila por factura.",
         (
             ("invoice_id", INT, "Identificador de la factura"),
             ("invoice_number", TEXT, "Número de factura"),
-            ("document_type", TEXT, "Tipo: 'invoice' (factura) o 'credit_note' (abono)"),
             ("invoice_date", DATE, "Fecha de factura"),
             ("due_date", DATE, "Fecha de vencimiento"),
             ("customer_id", INT, "Identificador del cliente"),
             ("customer_name", TEXT, "Nombre del cliente"),
-            ("customer_city", TEXT, "Ciudad del cliente"),
+            ("city", TEXT, "Ciudad del cliente"),
             ("salesperson_name", TEXT, "Nombre del comercial"),
-            ("amount_untaxed", MONEY, "Base imponible, en positivo"),
-            ("amount_tax", MONEY, "Impuestos, en positivo"),
-            ("amount_total", MONEY, "Total del documento, en positivo"),
-            ("amount_due", MONEY, "Importe pendiente de cobro, en positivo"),
-            ("net_amount", MONEY, "Total con signo: negativo en los abonos"),
+            ("amount_untaxed", MONEY, "Base imponible"),
+            ("amount_tax", MONEY, "Impuestos"),
+            ("amount_total", MONEY, "Importe facturado, con impuestos"),
+            ("amount_due", MONEY, "Importe pendiente de cobro: 0 si está cobrada"),
             (
                 "payment_state",
                 TEXT,
-                "Cobro: 'not_paid', 'in_payment', 'paid', 'partial' o 'reversed'",
+                "Cobro: 'not_paid', 'in_payment', 'paid', 'partial' o 'reversed' (rectificada)",
             ),
         ),
         ("account_move", *_PARTY),
         _fact_customer_invoices,
+        revision=3,
+    ),
+    Model(
+        "fact_customer_credit_notes",
+        "facturacion",
+        "Abonos (facturas rectificativas) a clientes. Una fila por abono.",
+        (
+            ("credit_note_id", INT, "Identificador del abono"),
+            ("credit_note_number", TEXT, "Número del abono"),
+            ("credit_note_date", DATE, "Fecha del abono"),
+            ("customer_id", INT, "Identificador del cliente"),
+            ("customer_name", TEXT, "Nombre del cliente"),
+            ("amount_untaxed", MONEY, "Base imponible, en positivo"),
+            ("amount_total", MONEY, "Importe abonado, en positivo"),
+            ("amount_due", MONEY, "Importe pendiente de devolver"),
+            ("payment_state", TEXT, "Pago: 'not_paid', 'paid', 'partial' o 'reversed'"),
+        ),
+        ("account_move", *_PARTY),
+        _fact_customer_credit_notes,
     ),
     Model(
         "fact_customer_invoice_lines",
         "facturacion",
-        "Líneas de facturas y abonos de clientes. Una fila por línea. "
-        "Úsala para facturación por producto, con document_type = 'invoice'.",
+        "Líneas de las facturas de clientes, sin abonos. Una fila por línea. "
+        "Úsala para facturación por producto.",
         (
             ("line_id", INT, "Identificador de la línea"),
             ("invoice_id", INT, "Identificador de la factura"),
             ("invoice_number", TEXT, "Número de factura"),
-            ("document_type", TEXT, "Tipo: 'invoice' (factura) o 'credit_note' (abono)"),
             ("invoice_date", DATE, "Fecha de factura"),
             ("customer_id", INT, "Identificador del cliente"),
             ("customer_name", TEXT, "Nombre del cliente"),
@@ -654,50 +698,47 @@ MODELS: tuple[Model, ...] = (
             ("product_type", TEXT, "Tipo: 'storable', 'consumable' o 'service'"),
             ("quantity", QUANTITY, "Unidades facturadas"),
             ("unit_price", MONEY, "Precio unitario"),
-            ("amount_untaxed", MONEY, "Importe sin impuestos, en positivo"),
-            ("net_amount", MONEY, "Importe sin impuestos con signo: negativo en los abonos"),
+            ("amount_untaxed", MONEY, "Importe facturado sin impuestos"),
         ),
         ("account_move", "account_move_line", *_PRODUCT, *_PARTY),
         _fact_customer_invoice_lines,
+        revision=2,
     ),
     Model(
         "fact_vendor_bills",
         "facturacion",
-        "Facturas de proveedores contabilizadas (compras). Una fila por documento.",
+        "Facturas de proveedores contabilizadas (compras), sin abonos. Una fila por factura.",
         (
             ("bill_id", INT, "Identificador de la factura de proveedor"),
             ("bill_number", TEXT, "Número de factura"),
-            ("document_type", TEXT, "Tipo: 'bill' (factura) o 'credit_note' (abono)"),
             ("bill_date", DATE, "Fecha de factura"),
             ("due_date", DATE, "Fecha de vencimiento"),
             ("vendor_id", INT, "Identificador del proveedor"),
             ("vendor_name", TEXT, "Nombre del proveedor"),
-            ("amount_untaxed", MONEY, "Base imponible, en positivo"),
-            ("amount_total", MONEY, "Total del documento, en positivo"),
-            ("amount_due", MONEY, "Importe pendiente de pago, en positivo"),
-            (
-                "payment_state",
-                TEXT,
-                "Pago: 'not_paid', 'in_payment', 'paid', 'partial' o 'reversed'",
-            ),
+            ("amount_untaxed", MONEY, "Base imponible"),
+            ("amount_total", MONEY, "Importe comprado, con impuestos"),
+            ("amount_due", MONEY, "Importe pendiente de pago: 0 si está pagada"),
+            ("payment_state", TEXT, "Pago: 'not_paid', 'in_payment', 'paid' o 'partial'"),
         ),
         ("account_move", *_PARTY),
         _fact_vendor_bills,
+        revision=2,
     ),
     Model(
         "agg_invoicing_monthly",
         "facturacion",
-        "Facturación a clientes por mes. Una fila por mes.",
+        "Facturación a clientes por mes, con los abonos y el neto. Una fila por mes.",
         (
             ("month", DATE, "Primer día del mes"),
             ("invoices", BIGINT, "Número de facturas"),
             ("credit_notes", BIGINT, "Número de abonos"),
             ("invoiced_amount", MONEY, "Total facturado, sin restar abonos"),
             ("credited_amount", MONEY, "Total abonado, en positivo"),
-            ("net_amount", MONEY, "Facturado menos abonado"),
+            ("net_amount", MONEY, "Facturación neta: facturado menos abonado"),
         ),
         ("account_move", *_PARTY),
         _agg_invoicing_monthly,
+        revision=2,
     ),
     Model(
         "dim_product",
@@ -738,7 +779,7 @@ MODELS: tuple[Model, ...] = (
         "fact_stock_moves",
         "inventario",
         "Movimientos de almacén. Una fila por movimiento. "
-        "Los realizados tienen move_status = 'done'.",
+        "Los realizados tienen move_status = 'done'; los pendientes, is_pending = true.",
         (
             ("move_id", INT, "Identificador del movimiento"),
             ("reference", TEXT, "Referencia del albarán"),
@@ -755,6 +796,7 @@ MODELS: tuple[Model, ...] = (
                 "Tipo: 'incoming' (entrada), 'outgoing' (salida), 'internal', 'adjustment' "
                 "(ajuste) u 'other'",
             ),
+            ("is_pending", BOOL, "Verdadero si aún no se ha realizado ni cancelado"),
             ("product_id", INT, "Identificador del producto"),
             ("product_name", TEXT, "Nombre del producto"),
             ("sku", TEXT, "Referencia interna"),
@@ -763,6 +805,7 @@ MODELS: tuple[Model, ...] = (
         ),
         ("stock_move", "stock_quant", *_PRODUCT),
         _fact_stock_moves,
+        revision=2,
     ),
     Model(
         "fact_opportunities",
@@ -775,7 +818,7 @@ MODELS: tuple[Model, ...] = (
             ("customer_name", TEXT, "Cliente o empresa"),
             ("city", TEXT, "Ciudad"),
             ("salesperson_name", TEXT, "Nombre del comercial"),
-            ("priority", INT, "Prioridad: 0 baja, 1 media, 2 alta, 3 muy alta"),
+            ("priority", TEXT, "Prioridad: 'baja', 'media', 'alta' o 'muy alta'"),
             ("probability", PERCENT, "Probabilidad de cierre, de 0 a 100"),
             ("expected_revenue", MONEY, "Ingreso esperado"),
             ("weighted_revenue", MONEY, "Ingreso esperado ponderado por la probabilidad"),
@@ -785,6 +828,7 @@ MODELS: tuple[Model, ...] = (
         ),
         ("crm_lead", *_PARTY),
         _fact_opportunities,
+        revision=2,
     ),
     Model(
         "fact_leads",

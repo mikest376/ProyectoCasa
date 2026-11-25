@@ -62,18 +62,20 @@ def test_every_model_matches_its_declared_schema(lake: Lake, model: Model) -> No
     assert pl.Float64() not in model.schema.values()
 
 
-def test_only_confirmed_orders_count_as_sales(lake: Lake) -> None:
+def test_orders_and_quotations_are_separate(lake: Lake) -> None:
     orders = by(lake, "fact_sales_orders", "order_number")
-    assert {number: row["order_status"] for number, row in orders.items()} == {
-        "S00100": "confirmed",
-        "S00101": "quotation",
-        "S00102": "confirmed",
-        "S00103": "cancelled",
-    }
-    assert [n for n, row in orders.items() if row["is_confirmed"]] == ["S00100", "S00102"]
+    assert sorted(orders) == ["S00100", "S00102"]
     assert orders["S00100"]["order_date"] == date(2026, 10, 5)
     assert orders["S00100"]["customer_name"] == "Azure Interior"
     assert orders["S00100"]["salesperson_name"] == "Mitchell Admin"
+    assert [orders[n]["is_pending_invoicing"] for n in ("S00100", "S00102")] == [False, True]
+    assert orders["S00100"]["is_pending_delivery"] is False
+    assert all(row["is_confirmed"] for row in orders.values())
+    quotations = by(lake, "fact_quotations", "quotation_number")
+    assert {number: row["quotation_status"] for number, row in quotations.items()} == {
+        "S00101": "open",
+        "S00103": "cancelled",
+    }
 
 
 def test_amounts_are_exact_and_in_company_currency(lake: Lake) -> None:
@@ -98,38 +100,29 @@ def test_monthly_sales(lake: Lake) -> None:
     }
 
 
-def test_invoices_separate_customers_from_vendors_and_skip_drafts(lake: Lake) -> None:
-    invoices = by(lake, "fact_customer_invoices", "invoice_number")
-    assert set(invoices) == {"INV/300", "RINV/301"}
-    refund = invoices["RINV/301"]
-    assert (refund["document_type"], refund["amount_total"], refund["net_amount"]) == (
-        "credit_note",
-        Decimal("42.12"),
-        Decimal("-42.12"),
-    )
+def test_invoices_credit_notes_and_bills_are_separate(lake: Lake) -> None:
+    """Sin borradores, y cada tabla con lo suyo: ninguna necesita filtros para responder."""
+    assert set(by(lake, "fact_customer_invoices", "invoice_number")) == {"INV/300"}
+    notes = by(lake, "fact_customer_credit_notes", "credit_note_number")
+    assert set(notes) == {"RINV/301"}
+    assert notes["RINV/301"]["amount_total"] == Decimal("42.12")
     bills = by(lake, "fact_vendor_bills", "bill_number")
     assert set(bills) == {"BILL/303"}
     assert bills["BILL/303"]["amount_total"] == Decimal("622.27")
     assert bills["BILL/303"]["vendor_name"] == "Wood Corner"
 
 
-def test_invoice_lines_have_sign_only_in_net(lake: Lake) -> None:
+def test_invoice_lines_skip_taxes_and_credit_notes(lake: Lake) -> None:
     lines = by(lake, "fact_customer_invoice_lines", "line_id")
-    assert set(lines) == {400, 402}
-    assert (lines[400]["amount_untaxed"], lines[400]["net_amount"]) == (
-        Decimal("200.10"),
-        Decimal("200.10"),
-    )
-    assert (lines[402]["amount_untaxed"], lines[402]["net_amount"]) == (
-        Decimal("40.00"),
-        Decimal("-40.00"),
-    )
+    assert set(lines) == {400}
+    assert lines[400]["amount_untaxed"] == Decimal("200.10")
 
 
 def test_monthly_invoicing(lake: Lake) -> None:
     [row] = table(lake, "agg_invoicing_monthly").rows(named=True)
     assert (row["invoices"], row["credit_notes"]) == (1, 1)
-    assert row["invoiced_amount"] - row["credited_amount"] == row["net_amount"] == Decimal("200.00")
+    assert (row["invoiced_amount"], row["credited_amount"]) == (Decimal("242.12"), Decimal("42.12"))
+    assert row["net_amount"] == Decimal("200.00")
 
 
 def test_stock_only_counts_internal_locations(lake: Lake) -> None:
@@ -148,6 +141,11 @@ def test_stock_moves_know_their_direction(lake: Lake) -> None:
         602: "incoming",
     }
     assert moves[601]["quantity_done"] == 0
+    assert {key: row["is_pending"] for key, row in moves.items()} == {
+        600: False,
+        601: True,
+        602: False,
+    }
 
 
 def test_products_use_their_variant_code_and_the_translated_name(lake: Lake) -> None:
@@ -164,6 +162,7 @@ def test_opportunity_status(lake: Lake) -> None:
         702: "lost",
     }
     assert opportunities[700]["probability"] == Decimal("33.33")
+    assert opportunities[700]["priority"] == "alta"
     assert opportunities[701]["customer_name"] == "Empresa X"
     assert list(by(lake, "fact_leads", "lead_id")) == [703]
 

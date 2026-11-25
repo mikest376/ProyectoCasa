@@ -13,7 +13,7 @@ Lakehouse local sobre Odoo 17 que responde preguntas en lenguaje natural:
 - Preparación del equipo: [docs/SETUP_WSL.md](docs/SETUP_WSL.md)
 - Fases y criterios de salida: [README.md](README.md#hoja-de-ruta)
 
-**Fase actual: 3 (Silver, Gold y catálogos).** El worker escribe las tres capas; `backend` y `frontend` son esqueletos. No adelantes trabajo de fases posteriores si no se pide.
+**Fase actual: 4 (Text-to-SQL).** El worker escribe las tres capas y el backend responde preguntas; `frontend` es un esqueleto. No adelantes trabajo de fases posteriores si no se pide.
 
 ## Reglas de arquitectura
 
@@ -59,17 +59,17 @@ Solo se publican Odoo y el frontend (con `/api` hacia FastAPI). Todo lo demás e
 
 ## Presupuesto de memoria
 
-WSL dispone de 15360 MiB. Los límites son fijos en `docker-compose.yml` y no se parametrizan por entorno.
+WSL dispone de 16384 MiB. Los límites son fijos en `docker-compose.yml` y no se parametrizan por entorno.
 
 | Servicio | Límite (MiB) | Ajuste interno | Perfil |
 |---|---:|---|---|
 | `odoo-db` | 512 | `shared_buffers=256MB`, 60 conexiones | `source` |
 | `odoo` | 768 | `workers=0` | `source` |
 | `kafka` | 1024 | heap 768 MiB | `streaming` |
-| `kafka-connect` | 1280 | heap 768 MiB | `streaming` |
+| `kafka-connect` | 1536 | heap 768 MiB | `streaming` |
 | `minio` | 640 | sin ajuste | `lakehouse` |
 | `unity-catalog` | 640 | heap 512 MiB | `lakehouse` |
-| `trino` | 2560 | heap 2048 MiB, 800 MB por consulta | `query` |
+| `trino` | 3072 | heap 2048 MiB, 800 MB por consulta | `query` |
 | `ollama` | 2560 | capas que no caben en VRAM | `ai` |
 | `medallion-worker` | 384 | `POLARS_MAX_THREADS=4` | `apps` |
 | `medallion-transform` | 512 | `POLARS_MAX_THREADS=4` | `apps` |
@@ -79,12 +79,12 @@ WSL dispone de 15360 MiB. Los límites son fijos en `docker-compose.yml` y no se
 | `langfuse` | 640 | `--max-old-space-size=512` | `observability` |
 | `langfuse-db` | 192 | sin ajuste | `observability` |
 | `caddy` | 128 | sin ajuste | `caddy` |
-| **Total** | **12864** | | |
-| **Reserva** (kernel, Docker, editor) | **2496** | | |
+| **Total** | **13632** | | |
+| **Reserva** (kernel, Docker, editor) | **2752** | | |
 
 Los servicios de un solo uso (`*-init`) no cuentan en el total. `odoo-init` se ejecuta con `odoo` detenido.
 
-- Tope del total: **13312 MiB**. La reserva nunca baja de 2048 MiB.
+- Tope del total: **14336 MiB**. La reserva nunca baja de 2048 MiB.
 - Todo servicio declara `deploy.resources.limits.memory`.
 - Heap de JVM: como máximo el 80 % del límite del contenedor, siempre explícito.
 - Para subir un límite, baja otro o consume holgura, y actualiza esta tabla en el mismo commit.

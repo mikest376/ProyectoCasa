@@ -90,13 +90,29 @@ def test_both_catalogs_match(settings: Settings, synced: Lake, http: httpx.Clien
     assert sync_catalogs(settings, synced, http) == 0
 
 
+def test_a_changed_definition_is_registered_again(
+    settings: Settings, synced: Lake, http: httpx.Client
+) -> None:
+    """Otra descripción en el código: se retira y se vuelve a registrar en Unity Catalog."""
+    entries = catalogs.expected(synced)
+    unity = UnityClient(http, settings.unity_catalog_url, settings.unity_catalog_name)
+    changed = [
+        catalogs.Entry(e.schema, e.name, "Otra descripción", e.location, e.columns)
+        if e.name == "dim_product"
+        else e
+        for e in entries
+    ]
+    assert catalogs.sync_unity(unity, synced, changed) == 1
+    assert unity.tables("gold")["dim_product"]["comment"] == "Otra descripción"
+    assert catalogs.sync_unity(unity, synced, entries) == 1
+
+
 def test_text2sql_reads_gold_with_exact_amounts(
     settings: Settings, synced: Lake, http: httpx.Client
 ) -> None:
     client = trino(settings, http, "text2sql")
     [[orders, total]] = client.query(
-        "SELECT count(*), sum(amount_total) FROM lakehouse.gold.fact_sales_orders "
-        "WHERE is_confirmed"
+        "SELECT count(*), sum(amount_total) FROM lakehouse.gold.fact_sales_orders"
     )
     assert (orders, total) == (2, "292.12")
     [[comment]] = [

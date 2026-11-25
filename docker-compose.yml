@@ -1,7 +1,7 @@
 # =============================================================================
 # Odoo Data Lakehouse
 #
-# PRESUPUESTO DE MEMORIA: 12864 MiB de límites sobre los 15360 MiB de WSL.
+# PRESUPUESTO DE MEMORIA: 13632 MiB de límites sobre los 16384 MiB de WSL.
 # Un cambio de límite obliga a actualizar la tabla de CLAUDE.md en el mismo commit.
 #
 # Nada arranca sin un perfil explícito:
@@ -242,7 +242,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1280M
+          memory: 1536M
 
   # ---------------------------------------------------------------------------
   # 3 · Almacenamiento y catálogo
@@ -359,7 +359,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2560M # heap 2 GiB (jvm.config) + memoria fuera de heap
+          memory: 3072M # heap 2 GiB (jvm.config) + memoria fuera de heap
 
   ollama:
     <<: *service
@@ -549,6 +549,11 @@ services:
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000}
       SQL_MAX_ROWS: ${SQL_MAX_ROWS:-1000}
       SQL_TIMEOUT_SECONDS: ${SQL_TIMEOUT_SECONDS:-60}
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-4096}
+      # Trazas de cada pregunta, sin filas de resultados.
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     networks: [edge-app, lakehouse]
     ports:
       - "127.0.0.1:${BACKEND_PORT_HOST:-8000}:8000"

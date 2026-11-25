@@ -38,7 +38,7 @@ import json, sys
 services = json.load(sys.stdin)["services"]
 total = sum(int(s["deploy"]["resources"]["limits"]["memory"]) for n, s in services.items() if not n.endswith("-init")) // 2**20
 print(total)
-sys.exit(total > 13312)'
+sys.exit(total > 14336)'
 }
 
 # Las credenciales raíz de MinIO no salen de minio y minio-init (TD-014).
