@@ -115,7 +115,39 @@ flowchart LR
 - **Valores TOAST.** Debezium envía `__debezium_unavailable_value` cuando un campo largo no ha cambiado. El MERGE conserva el valor anterior y nunca escribe ese marcador.
 - **Concurrencia.** Un solo escritor. En MinIO, delta-rs usa escritura condicional (`aws_conditional_put=etag`), probada con la imagen fijada.
 
-Desde la Fase 2, el worker escribe Bronze. Silver y Gold llegan en la Fase 3.
+Desde la Fase 3, los tres niveles están en marcha.
+
+### Silver
+
+Un contrato por tabla (`contracts.py`) declara las columnas, sus tipos y su significado. Es una selección: correos, teléfonos, direcciones y credenciales no pasan de Bronze.
+
+- **Incremental.** La marca de agua es el mayor `_ingested_at` aplicado y se guarda en la propia tabla, en el mismo commit que los datos. Se relee un margen de 10 minutos y el LSN descarta lo ya aplicado.
+- **Columnas técnicas.** `_is_deleted`, `_op`, `_source_lsn`, `_source_ts`, `_bronze_offset` y `_updated_at`.
+- **Contratos.** Un incumplimiento detiene esa tabla y el healthcheck, no las demás ([TD-011](TECHNICAL_DEBT.md#td-011)).
+
+### Gold
+
+Catorce modelos (`gold_models.py`), desnormalizados para que una pregunta se resuelva casi siempre sin `JOIN`. Se reconstruyen enteros cuando cambia alguna de sus tablas Silver.
+
+| Dominio | Modelos |
+|---|---|
+| Ventas | `fact_sales_orders`, `fact_sales_order_lines`, `agg_sales_monthly` |
+| Facturación | `fact_customer_invoices`, `fact_customer_invoice_lines`, `fact_vendor_bills`, `agg_invoicing_monthly` |
+| Inventario | `dim_product`, `agg_stock_by_product`, `fact_stock_moves` |
+| CRM | `fact_opportunities`, `fact_leads` |
+| Maestros | `dim_customer`, `dim_salesperson` |
+
+Los importes son `decimal(18,2)` en la moneda de la empresa. Las existencias cuentan solo ubicaciones internas: se reconocen porque Odoo calcula en ellas `inventory_date`, sin salir de las tablas core.
+
+### Procesos
+
+| Servicio | Función | Usuario de MinIO |
+|---|---|---|
+| `medallion-worker` | Kafka → Bronze, de forma continua | Worker |
+| `medallion-transform` | Bronze → Silver → Gold y catálogos, cada 60 s | Worker |
+| `bronze-maintenance` | Compactación y `VACUUM` de Bronze, a diario | Propio, solo `bronze/odoo/` |
+
+Los tres comparten imagen y código, y nunca escriben a la vez la misma tabla, salvo la compactación, que es compatible con la ingesta.
 
 ### Acceso a MinIO
 
@@ -125,13 +157,16 @@ Desde la Fase 2, el worker escribe Bronze. Silver y Gold llegan en la Fase 3.
 |---|---|---|
 | Raíz (solo `minio` y `minio-init`) | Todo | Todo |
 | Worker | Leer y añadir, sin borrar | Leer, escribir y borrar |
-| Trino | Nada | Leer |
+| Trino | Nada | Leer. Escribe solo `gold/_trino_metastore/` |
+| Mantenimiento | Leer, escribir y borrar en `bronze/odoo/` | Nada |
 
 ## Catálogo y consulta
 
-Unity Catalog OSS es el catálogo de referencia: `lakehouse.silver` y `lakehouse.gold`, con tablas externas y descripciones de columnas. FastAPI lee de él el esquema que se incluye en el prompt.
+Unity Catalog OSS es el catálogo de referencia: `lakehouse.silver` y `lakehouse.gold`, con tablas externas y descripciones de tabla y columna. FastAPI lee de él el esquema que se incluye en el prompt.
 
-Trino 484 no puede usar Unity Catalog OSS como metastore de tablas Delta. **Decisión: opción A de [TD-002](TECHNICAL_DEBT.md#td-002)**, un metastore en ficheros sobre MinIO con registro por `system.register_table` desde el worker. Está probada y se activa en la Fase 3.
+Trino 484 no puede usar Unity Catalog OSS como metastore de tablas Delta: usa uno en ficheros, en `s3://gold/_trino_metastore` ([TD-002](TECHNICAL_DEBT.md#td-002)). `medallion-transform` registra las tablas en los dos a partir de las mismas definiciones y los compara.
+
+El control de acceso de Trino (`infra/trino/access-control.json`) deja a `text2sql` leer Gold y nada más.
 
 ## Text-to-SQL
 

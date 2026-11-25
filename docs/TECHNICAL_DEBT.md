@@ -28,18 +28,18 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | ID | Deuda | Severidad | Estado | Se paga en |
 |---|---|---|---|---|
 | [TD-001](#td-001) | El modelo 7B no cabe completo en la GPU (6 GB) | Media | Mitigada | Fase 4 |
-| [TD-002](#td-002) | Trino no lee Unity Catalog OSS para tablas Delta | Media | Mitigada | Fase 3 |
+| [TD-002](#td-002) | Trino no lee Unity Catalog OSS para tablas Delta | Media | Pagada | 2026-11-25 |
 | [TD-003](#td-003) | MinIO Community archivado, con imagen de un tercero | Media | Aceptada | Después del MVP |
 | [TD-004](#td-004) | La captura global copia datos sensibles a Kafka y Bronze | Alta | Mitigada | Fase 6 |
 | [TD-005](#td-005) | La captura global puede bloquear escrituras en Odoo | Media | Mitigada | Fase 6 |
 | [TD-006](#td-006) | Retención de WAL ligada al slot de replicación | Media | Mitigada | Fase 6 |
-| [TD-007](#td-007) | Bronze sin particionamiento avanzado ni mantenimiento | Media | Abierta | Fase 3 |
+| [TD-007](#td-007) | Bronze sin particionamiento avanzado ni mantenimiento | Media | Pagada | 2026-11-25 |
 | [TD-008](#td-008) | Trino en un solo nodo | Media | Aceptada | Después del MVP |
 | [TD-009](#td-009) | Sin autenticación JWT ni autorización | Alta | Abierta | Fase 6 |
 | [TD-010](#td-010) | Kafka con un solo broker y sin réplicas | Media | Aceptada | Después del MVP |
-| [TD-011](#td-011) | Eventos JSON sin registro de esquemas | Media | Abierta | Fase 6 |
+| [TD-011](#td-011) | Eventos JSON sin registro de esquemas | Media | Mitigada | Fase 6 |
 | [TD-012](#td-012) | Odoo 17 fuera de soporte estándar | Alta | Abierta | Después del MVP |
-| [TD-013](#td-013) | Unity Catalog en modo desarrollo | Media | Abierta | Fases 3 y 6 |
+| [TD-013](#td-013) | Unity Catalog en modo desarrollo | Media | Mitigada | Fase 6 |
 | [TD-014](#td-014) | Credenciales raíz compartidas y tráfico interno sin TLS | Media | Mitigada | Fase 6 |
 | [TD-015](#td-015) | Sin observabilidad ni alertas de infraestructura | Media | Abierta | Fase 6 |
 | [TD-016](#td-016) | Sin integración continua | Media | Pagada | 2026-11-25 |
@@ -75,9 +75,9 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
   - La [integración oficial de Unity Catalog con Trino](https://github.com/unitycatalog/unitycatalog/blob/v0.7.0/docs/integrations/unity-catalog-trino.md) usa Iceberg REST y requiere tablas Delta con UniForm. delta-rs [no permite activarlo](https://github.com/delta-io/delta-rs/issues/3299).
 - **Riesgo.** Dos registros de metadatos que pueden divergir, y dependencia de una opción de Trino sin documentar.
 - **Decisión.** **Opción A, confirmada:** `hive.metastore=file` sobre MinIO, con registro de tablas desde el worker (`system.register_table`). No añade contenedores. Descartadas para el MVP: Hive Metastore (contenedor, base de datos y unos 768 MiB más) y Gold en Iceberg (cambia la decisión de usar Delta Lake).
-- **Mitigación actual.** Unity Catalog es el catálogo de referencia y Trino está fijado en la versión 484. La configuración está preparada, e inactiva, en `infra/trino/catalog/lakehouse.properties.example`. Probada el 2026-11-24 con esa plantilla, MinIO y una tabla escrita con delta-rs: registro, consulta con decimales exactos, lectura de commits posteriores sin volver a registrar y persistencia tras reiniciar Trino (1,2 GiB de 5).
-- **Plan de pago.** En la Fase 3, registro automático desde el worker y una prueba que compare los dos catálogos. Antes de actualizar Trino, repetir la prueba.
-- **Disparador.** Los catálogos divergen, o una versión de Trino elimina el metastore `file`. En ese caso, Hive Metastore.
+- **Pago.** Pagada el 2026-11-25 (commit `999847d`). `medallion-transform` registra las 11 tablas Silver y los 14 modelos Gold en los dos catálogos a partir de las mismas definiciones, y los repara cada 10 minutos. `python -m medallion_worker catalogs` compara Trino, Unity Catalog y lo declarado (tablas, columnas, tipos, ubicación y descripción): 25 tablas, 0 diferencias, también tras reiniciar. La comparación forma parte de `scripts/test_integration.sh`.
+- **Queda como límite.** El metastore `file` sigue sin documentar: antes de actualizar Trino, repetir la integración.
+- **Disparador.** Una versión de Trino elimina el metastore `file`. En ese caso, Hive Metastore.
 
 <a id="td-003"></a>
 ### TD-003 · MinIO Community archivado, con imagen de un tercero
@@ -126,8 +126,11 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Cada tabla de origen se escribe en una tabla Delta sin particiones, en microlotes. No hay compactación ni `VACUUM` programados.
 - **Riesgo.** Muchos ficheros pequeños, lecturas lentas hacia Silver y crecimiento continuo del almacenamiento.
-- **Mitigación actual.** Lotes por número, bytes y tiempo (`WORKER_BATCH_MAX_RECORDS`, `WORKER_BATCH_MAX_BYTES`, `WORKER_BATCH_MAX_SECONDS`), y un commit por tabla y lote. Tras la carga inicial: 198 tablas, 222 ficheros y 42 885 filas. En el peor caso, una tabla con cambios continuos suma 2880 ficheros al día.
-- **Plan de pago.** En la Fase 3, compactar y limpiar a diario con delta-rs, y particionar por fecha de ingesta las tablas de mayor volumen. El usuario de MinIO del worker no puede borrar en Bronze ([TD-014](#td-014)) y las tablas llevan `delta.enableExpiredLogCleanup=false`: la limpieza necesitará un permiso propio, y solo para eso.
+- **Pago.** Pagada el 2026-11-25 (commit `999847d`), con autorización expresa del usuario:
+  - `bronze-maintenance` compacta a diario (03:00 UTC) las tablas con 8 ficheros o más, ejecuta `VACUUM` con 7 días de retención y limpia el registro. Usa un usuario de MinIO propio, que solo alcanza `bronze/odoo/`; el de la ingesta sigue sin poder borrar ([TD-014](#td-014)).
+  - Ocho tablas, las de mayor volumen o crecimiento, están particionadas por `_ingested_date`. Se convirtieron en un commit atómico por tabla, comprobando fila a fila: 26 547 filas, ninguna distinta. `delta.appendOnly` se levanta solo durante ese commit.
+  - Silver y Gold los mantiene `medallion-transform`.
+  - Probado: 12 ficheros pasan a 1 sin cambiar filas, con la ingesta escribiendo a la vez, y el usuario de la ingesta no puede ejecutar `VACUUM`.
 - **Disparador.** Más de 1000 ficheros o 5 GB en una tabla Bronze.
 
 <a id="td-008"></a>
@@ -155,7 +158,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** KRaft con broker y controlador en un mismo proceso y factor de réplica 1.
 - **Riesgo.** Si se pierde el volumen, se pierden los eventos no ingeridos y los offsets de Debezium. Además, los offsets vuelven a empezar en 0: las coordenadas `(_topic, _partition, _offset)` de Bronze se repetirían con eventos distintos.
 - **Mitigación actual.** Volumen persistente y retención de 7 días. El origen permite repetir el snapshot.
-- **Plan de pago.** Tres brokers cuando haya hardware. En la Fase 3, que la deduplicación de Silver incluya `source_lsn` y no solo las coordenadas de Kafka.
+- **Mitigación actual (Silver).** Desde la Fase 3, la deduplicación usa `(_topic, _partition, _offset, source_lsn)` y el orden lo da el LSN: si se recrea el clúster de Kafka, los offsets repetidos no ocultan eventos nuevos (con prueba). Si se recrea **PostgreSQL**, el LSN vuelve a empezar y los cambios parecerían antiguos: habría que vaciar Silver y reconstruirlo desde Bronze.
+- **Plan de pago.** Tres brokers cuando haya hardware.
 - **Disparador.** Necesidad de alta disponibilidad.
 
 <a id="td-011"></a>
@@ -163,9 +167,9 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Se usa `JsonConverter` con `schemas.enable=false` para ahorrar memoria y simplificar el worker.
 - **Riesgo.** Decimales, fechas y marcas de tiempo llegan como texto o enteros, y un cambio de esquema en Odoo puede pasar inadvertido.
-- **Mitigación actual.** El evento crudo se conserva en Bronze y los tipos se imponen en Silver. Comprobado: los importes llegan como texto exacto y las fechas, en microsegundos.
-- **Plan de pago.** Contratos de esquema con pruebas en la Fase 3. Evaluar Apicurio con Avro en la Fase 6: la imagen de Debezium ya incluye los convertidores.
-- **Disparador.** Actualización de módulos de Odoo, o dos incidencias de tipos.
+- **Mitigación actual.** El evento crudo se conserva en Bronze. Silver impone contratos (`contracts.py`): 11 tablas y 188 columnas con su tipo. Una columna que falta, un tipo distinto o un nulo no permitido detienen **esa tabla**, sin convertir nada en nulo: las demás siguen, Gold conserva lo anterior y el healthcheck de `medallion-transform` deja de pasar. `scripts/check_contracts.py` compara los contratos con el esquema real de Odoo: 0 diferencias el 2026-11-25. Hay pruebas de cada tipo de incumplimiento.
+- **Plan de pago.** Evaluar Apicurio con Avro en la Fase 6: la imagen de Debezium ya incluye los convertidores. Hasta entonces, repetir `check_contracts.py` al instalar o actualizar módulos.
+- **Disparador.** Dos incidencias de tipos, u otro consumidor de los topics.
 
 <a id="td-012"></a>
 ### TD-012 · Odoo 17 fuera de soporte estándar
@@ -180,18 +184,19 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-013 · Unity Catalog en modo desarrollo
 
 - **Contexto.** Base H2 embebida y autorización desactivada. La plantilla de configuración 0.7.0 no permite indicar un endpoint S3 propio, y siguen abiertas las incidencias con MinIO ([#844](https://github.com/unitycatalog/unitycatalog/issues/844), [#1324](https://github.com/unitycatalog/unitycatalog/issues/1324)).
-- **Riesgo.** Sin permisos por tabla ni credenciales temporales: cada cliente necesita sus propias claves S3. El registro de tablas externas sobre MinIO está sin probar.
-- **Mitigación actual.** Unity Catalog se usa solo para metadatos, con la base en un volumen persistente.
-- **Plan de pago.** Probar el registro de tablas externas al inicio de la Fase 3. En la Fase 6, pasar a PostgreSQL y activar la autorización.
-- **Disparador.** La prueba de la Fase 3 falla, o se corrompe la base H2.
+- **Riesgo.** Sin permisos por tabla ni credenciales temporales: cada cliente necesita sus propias claves S3.
+- **Mitigación actual.** Unity Catalog se usa solo para metadatos, con la base en un volumen persistente. Probado el 2026-11-25: registro de 25 tablas externas en MinIO con descripciones de tabla y columna, sin credenciales de S3, y persistencia tras reiniciar (commit `999847d`). Si se pierde la base H2, `medallion-transform` la reconstruye en el siguiente ciclo.
+- **Plan de pago.** En la Fase 6, pasar a PostgreSQL y activar la autorización.
+- **Disparador.** Otro servicio escribe en el catálogo, o hacen falta permisos por tabla.
 
 <a id="td-014"></a>
 ### TD-014 · Credenciales raíz compartidas y tráfico interno sin TLS
 
 - **Contexto.** Hasta la Fase 2, worker y Trino usaban las credenciales raíz de MinIO. Los servicios se comunican sin cifrar y los secretos están en `.env`.
 - **Riesgo.** Quien lea el tráfico de la red interna o `.env` obtiene las credenciales.
-- **Mitigación actual.** Redes segmentadas y puertos locales. En PostgreSQL, Odoo y Debezium usan roles de mínimo privilegio. En MinIO, `minio-init` crea un usuario por servicio ([infra/minio](../infra/minio/README.md)): el worker no puede borrar en Bronze, y Trino solo lee Silver y Gold. Las credenciales raíz solo las reciben `minio` y `minio-init`, y `validate.sh` lo comprueba. `scripts/test_integration.sh` verifica 32 permisos concedidos y denegados con usuarios reales.
-- **Plan de pago.** En la Fase 3, dos excepciones acotadas: que Trino escriba en `gold/_trino_metastore/` ([TD-002](#td-002)) y que alguien pueda borrar en Bronze al compactar ([TD-007](#td-007)). TLS y Docker Secrets en la Fase 6.
+- **Mitigación actual.** Redes segmentadas y puertos locales. En PostgreSQL, Odoo y Debezium usan roles de mínimo privilegio. En MinIO, `minio-init` crea un usuario por servicio ([infra/minio](../infra/minio/README.md)): el worker no puede borrar en Bronze, y Trino solo lee Silver y Gold. Las credenciales raíz solo las reciben `minio` y `minio-init`, y `validate.sh` lo comprueba. `scripts/test_integration.sh` verifica 53 permisos concedidos y denegados con usuarios reales.
+- **Excepciones de la Fase 3** (2026-11-25, commit `999847d`), las dos previstas y acotadas: Trino escribe solo en `gold/_trino_metastore/`, prefijo vetado al worker, y `bronze-maintenance` borra solo en `bronze/odoo/`.
+- **Plan de pago.** TLS y Docker Secrets en la Fase 6.
 - **Disparador.** Datos reales o acceso desde otro equipo.
 
 <a id="td-015"></a>
@@ -315,8 +320,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** Medido el 2026-11-25. WSL puede ocupar 22 GB de los 32 del equipo, y la caché de disco de Linux cuenta como memoria en uso para Windows: 12 GB tras compilar las imágenes, con los servicios usando 2,6. Con un navegador abierto, la memoria confirmada llegó a 44 GB y Windows amplió su fichero de paginación, que es automático, hasta dejar `C:` con 4,1 GB.
 - **Riesgo.** Si se llena `C:`, falla Windows.
 - **Mitigación actual.**
-  - `autoMemoryReclaim=gradual` en `.wslconfig`: WSL devuelve la caché poco a poco ([SETUP_WSL](SETUP_WSL.md#3-wslconfig)).
-  - Límites ajustados a lo medido: de 19 840 a 15 104 MiB antes de la Fase 3. El mayor cambio es Trino, de 5120 a 3072 MiB.
+  - **Tope de WSL: de 22 a 15 GB.** Es lo que de verdad protege `C:`. `autoMemoryReclaim=gradual` también está puesto ([SETUP_WSL](SETUP_WSL.md#3-wslconfig)), pero no basta: con los servicios en marcha la máquina nunca está ociosa y la caché no se devuelve (13 GB tras descargar imágenes).
+  - Límites ajustados a lo medido: de 19 840 a 12 864 MiB con Trino, Unity Catalog y los dos servicios nuevos en marcha. En reposo, los 14 servicios usan unos 4,3 GB.
   - `check_env.sh` avisa por debajo de 20 GB libres. `wsl --shutdown` devuelve la memoria en el acto.
 - **Plan de pago.** Medir `C:` y la memoria confirmada con el conjunto completo en marcha y un día de uso.
 - **Disparador.** Menos de 10 GB libres en `C:` antes de una descarga o de una compilación.

@@ -105,7 +105,7 @@ El detalle de cada flujo, las versiones y los controles de seguridad están en [
 | Recurso | Equipo de referencia | Comentario |
 |---|---|---|
 | CPU | AMD Ryzen 5 5600 (6 núcleos, 12 hilos) | |
-| RAM | 32 GB DDR4 | 22 GB para WSL 2 |
+| RAM | 32 GB DDR4 | 15 GB para WSL 2 |
 | GPU | NVIDIA GTX 1060, 6 GB | El modelo 3B cabe en la VRAM libre ([TD-001](docs/TECHNICAL_DEBT.md#td-001)) |
 | Disco | 60 GB libres en la unidad donde Docker guarda sus datos | Imágenes, modelo y datos |
 
@@ -121,7 +121,7 @@ Por defecto, WSL usa solo el 50 % de la RAM, que no basta para este proyecto. En
 
 ```ini
 [wsl2]
-memory=22GB
+memory=15GB
 processors=10
 swap=4GB
 ```
@@ -136,16 +136,16 @@ bash scripts/check_env.sh --gpu
 
 | Capa | Servicios | Límite (MiB) |
 |---|---|---:|
-| Origen | PostgreSQL, Odoo | 1792 |
+| Origen | PostgreSQL, Odoo | 1280 |
 | Streaming | Kafka, Debezium Connect | 2304 |
-| Lakehouse | MinIO, Unity Catalog | 1536 |
-| Consulta | Trino (heap de 2 GB) | 3072 |
-| IA | Ollama | 4096 |
-| Aplicación | Worker, FastAPI, Next.js | 1152 |
-| Observabilidad | Langfuse y su base de datos | 1024 |
+| Lakehouse | MinIO, Unity Catalog | 1280 |
+| Consulta | Trino (heap de 2 GB) | 2560 |
+| IA | Ollama | 2560 |
+| Aplicación | Worker (ingesta, transformación y mantenimiento), FastAPI, Next.js | 1920 |
+| Observabilidad | Langfuse y su base de datos | 832 |
 | Entrada | Caddy | 128 |
-| **Total** | | **15104** |
-| **Reserva de WSL** | | **7424** |
+| **Total** | | **12864** |
+| **Reserva de WSL** | | **2496** |
 
 El desglose por contenedor y el presupuesto de VRAM están en [CLAUDE.md](CLAUDE.md#presupuesto-de-memoria).
 
@@ -174,9 +174,10 @@ python3 scripts/cdc.py status
 **Lakehouse, servicios propios y entrada:**
 
 ```bash
-docker compose --profile lakehouse up -d --wait minio
+docker compose --profile lakehouse up -d --wait minio unity-catalog
 docker compose --profile lakehouse up minio-init           # buckets y un usuario por servicio
-docker compose --profile apps up -d --build --wait         # el worker empieza a escribir Bronze
+docker compose --profile query up -d --build --wait        # Trino
+docker compose --profile apps up -d --build --wait         # Bronze, Silver, Gold y catálogos
 docker compose --profile caddy up -d                       # solo en 127.0.0.1
 ```
 
@@ -186,11 +187,11 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 |---|---|---|
 | `source` | PostgreSQL, Odoo | Probado |
 | `streaming` | Kafka, Debezium Connect | Probado |
-| `lakehouse` | MinIO, Unity Catalog | MinIO probado, con un usuario por servicio; Unity Catalog en la Fase 3 |
-| `apps` | Worker, FastAPI, Next.js | El worker escribe Bronze; FastAPI y Next.js son esqueletos |
+| `lakehouse` | MinIO, Unity Catalog | Probado, con un usuario de MinIO por servicio |
+| `apps` | Worker (ingesta, transformación y mantenimiento), FastAPI, Next.js | El worker escribe Bronze, Silver y Gold |
 | `observability` | Langfuse 2 | Probado |
 | `caddy` | Caddy | Probado en `127.0.0.1`, con certificado público |
-| `query` | Trino | Catálogo probado; se activa en la Fase 3 |
+| `query` | Trino | Probado: 25 tablas, iguales en los dos catálogos |
 | `ai` | Ollama | Fase 4 |
 
 | Interfaz | Dirección |
@@ -210,7 +211,7 @@ bash scripts/test_integration.sh      # permisos de MinIO y recorrido de Kafka a
 
 Tras editar `infra/caddy`, `infra/odoo` o `infra/postgres`, repite el `up` con `--build`: su configuración va dentro de la imagen ([TD-027](docs/TECHNICAL_DEBT.md#td-027)).
 
-Tras instalar módulos de Odoo hay que repetir `python3 scripts/cdc.py register`: prepara las tablas nuevas y comprueba que no añaden columnas con secretos.
+Tras instalar módulos de Odoo hay que repetir `python3 scripts/cdc.py register`, que prepara las tablas nuevas y comprueba que no añaden columnas con secretos, y `python3 scripts/check_contracts.py`, que comprueba que Silver las sigue entendiendo.
 
 ## Proveedor de LLM
 
@@ -343,7 +344,7 @@ Con `CADDY_RESTART=no`, el valor por defecto, Caddy no se reinicia solo: tras ap
 | **0** | Base arquitectónica | Compose válido, presupuestos y deuda documentados | Completada |
 | **1** | Origen y CDC: Odoo, PostgreSQL, Kafka, Debezium | Un cambio en Odoo aparece en Kafka en menos de 5 s | Completada |
 | **2** | Bronze: worker, MinIO e integración continua | Todas las tablas en Delta; un reinicio no pierde eventos | Completada |
-| **3** | Silver, Gold, Unity Catalog y Trino | Los cinco dominios se consultan desde Trino | Pendiente |
+| **3** | Silver, Gold, Unity Catalog y Trino | Los cinco dominios se consultan desde Trino | Completada |
 | **4** | Text-to-SQL: LLM, FastAPI y Langfuse | Conjunto de evaluación superado y SQL peligroso rechazado | Pendiente |
 | **5** | Dashboard conversacional: Next.js y Tremor | De la pregunta al gráfico, de extremo a extremo | Pendiente |
 | **6** | Endurecimiento: JWT, TLS interno, observabilidad, copias | Deuda de severidad Alta pagada | Pendiente |
