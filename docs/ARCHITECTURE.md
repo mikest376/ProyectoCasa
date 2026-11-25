@@ -127,12 +127,12 @@ Un contrato por tabla (`contracts.py`) declara las columnas, sus tipos y su sign
 
 ### Gold
 
-Catorce modelos (`gold_models.py`), desnormalizados para que una pregunta se resuelva casi siempre sin `JOIN`. Se reconstruyen enteros cuando cambia alguna de sus tablas Silver.
+Dieciséis modelos (`gold_models.py`), desnormalizados para que una pregunta se resuelva casi siempre sin `JOIN`. Cada uno responde por sí solo, sin filtros obligatorios: las facturas no incluyen abonos ni los pedidos, presupuestos. Se reconstruyen enteros cuando cambia alguna de sus tablas Silver.
 
 | Dominio | Modelos |
 |---|---|
-| Ventas | `fact_sales_orders`, `fact_sales_order_lines`, `agg_sales_monthly` |
-| Facturación | `fact_customer_invoices`, `fact_customer_invoice_lines`, `fact_vendor_bills`, `agg_invoicing_monthly` |
+| Ventas | `fact_sales_orders`, `fact_quotations`, `fact_sales_order_lines`, `agg_sales_monthly` |
+| Facturación | `fact_customer_invoices`, `fact_customer_credit_notes`, `fact_customer_invoice_lines`, `fact_vendor_bills`, `agg_invoicing_monthly` |
 | Inventario | `dim_product`, `agg_stock_by_product`, `fact_stock_moves` |
 | CRM | `fact_opportunities`, `fact_leads` |
 | Maestros | `dim_customer`, `dim_salesperson` |
@@ -207,11 +207,23 @@ sequenceDiagram
 
 El control de acceso de Trino limita lo que puede hacer el usuario `text2sql`, pero no sustituye a la autenticación ([TD-009](TECHNICAL_DEBT.md#td-009)).
 
+### Cómo se construye el prompt
+
+1. Reglas y esquema de Gold, leído de Unity Catalog. Es siempre igual: el proveedor lo reutiliza entre preguntas.
+2. Los tres ejemplos resueltos más parecidos a la pregunta, por similitud léxica.
+3. La pregunta, con la tabla más probable y sus columnas.
+
+La respuesta es JSON (`explanation`, `sql`, `chart_type`, `x_axis`, `y_axis`, `title`); Ollama restringe la generación a ese esquema. Si el SQL se rechaza o Trino devuelve un error de análisis, hay un segundo intento con el motivo. Los errores de ejecución no se reenvían: podrían contener datos.
+
 ### Proveedores de LLM
 
 `LLM_PROVIDER` elige entre Ollama (local, por defecto) y NVIDIA NIM (API externa compatible con OpenAI). El resto del backend solo conoce una interfaz común. `GET /api/llm` indica qué proveedor responde y si el prompt sale del host, y la interfaz lo muestra.
 
-Desde la Fase 4, las llamadas se trazarán en Langfuse con el SDK de Python v2, la versión compatible con el servidor instalado.
+### Trazas y evaluación
+
+Cada pregunta deja en Langfuse una traza con los intentos, los tokens, el SQL y los tiempos, sin filas de resultados. Se envía por la API HTTP de ingesta: el SDK de Python v2, el compatible con el servidor, ya no se mantiene.
+
+`python -m lakehouse_api.evals` mide la precisión con 100 preguntas ([TD-018](TECHNICAL_DEBT.md#td-018)).
 
 ## Red
 

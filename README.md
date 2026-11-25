@@ -105,7 +105,7 @@ El detalle de cada flujo, las versiones y los controles de seguridad están en [
 | Recurso | Equipo de referencia | Comentario |
 |---|---|---|
 | CPU | AMD Ryzen 5 5600 (6 núcleos, 12 hilos) | |
-| RAM | 32 GB DDR4 | 15 GB para WSL 2 |
+| RAM | 32 GB DDR4 | 16 GB para WSL 2 |
 | GPU | NVIDIA GTX 1060, 6 GB | El modelo 3B cabe en la VRAM libre ([TD-001](docs/TECHNICAL_DEBT.md#td-001)) |
 | Disco | 60 GB libres en la unidad donde Docker guarda sus datos | Imágenes, modelo y datos |
 
@@ -121,7 +121,7 @@ Por defecto, WSL usa solo el 50 % de la RAM, que no basta para este proyecto. En
 
 ```ini
 [wsl2]
-memory=15GB
+memory=16GB
 processors=10
 swap=4GB
 ```
@@ -137,15 +137,15 @@ bash scripts/check_env.sh --gpu
 | Capa | Servicios | Límite (MiB) |
 |---|---|---:|
 | Origen | PostgreSQL, Odoo | 1280 |
-| Streaming | Kafka, Debezium Connect | 2304 |
+| Streaming | Kafka, Debezium Connect | 2560 |
 | Lakehouse | MinIO, Unity Catalog | 1280 |
-| Consulta | Trino (heap de 2 GB) | 2560 |
+| Consulta | Trino (heap de 2 GB) | 3072 |
 | IA | Ollama | 2560 |
 | Aplicación | Worker (ingesta, transformación y mantenimiento), FastAPI, Next.js | 1920 |
 | Observabilidad | Langfuse y su base de datos | 832 |
 | Entrada | Caddy | 128 |
-| **Total** | | **12864** |
-| **Reserva de WSL** | | **2496** |
+| **Total** | | **13632** |
+| **Reserva de WSL** | | **2752** |
 
 El desglose por contenedor y el presupuesto de VRAM están en [CLAUDE.md](CLAUDE.md#presupuesto-de-memoria).
 
@@ -177,6 +177,9 @@ python3 scripts/cdc.py status
 docker compose --profile lakehouse up -d --wait minio unity-catalog
 docker compose --profile lakehouse up minio-init           # buckets y un usuario por servicio
 docker compose --profile query up -d --build --wait        # Trino
+docker compose --profile ai up -d --wait                   # Ollama
+docker compose exec ollama ollama pull qwen2.5-coder:3b-instruct-q4_K_M
+docker compose --profile observability up -d --wait        # Langfuse
 docker compose --profile apps up -d --build --wait         # Bronze, Silver, Gold y catálogos
 docker compose --profile caddy up -d                       # solo en 127.0.0.1
 ```
@@ -192,7 +195,7 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 | `observability` | Langfuse 2 | Probado |
 | `caddy` | Caddy | Probado en `127.0.0.1`, con certificado público |
 | `query` | Trino | Probado: 25 tablas, iguales en los dos catálogos |
-| `ai` | Ollama | Fase 4 |
+| `ai` | Ollama | Probado: modelo 3B entero en la GPU |
 
 | Interfaz | Dirección |
 |---|---|
@@ -345,7 +348,7 @@ Con `CADDY_RESTART=no`, el valor por defecto, Caddy no se reinicia solo: tras ap
 | **1** | Origen y CDC: Odoo, PostgreSQL, Kafka, Debezium | Un cambio en Odoo aparece en Kafka en menos de 5 s | Completada |
 | **2** | Bronze: worker, MinIO e integración continua | Todas las tablas en Delta; un reinicio no pierde eventos | Completada |
 | **3** | Silver, Gold, Unity Catalog y Trino | Los cinco dominios se consultan desde Trino | Completada |
-| **4** | Text-to-SQL: LLM, FastAPI y Langfuse | Conjunto de evaluación superado y SQL peligroso rechazado | Pendiente |
+| **4** | Text-to-SQL: LLM, FastAPI y Langfuse | Conjunto de evaluación medido y SQL peligroso rechazado | Completada: 72 % en preguntas no vistas ([TD-001](docs/TECHNICAL_DEBT.md#td-001)) |
 | **5** | Dashboard conversacional: Next.js y Tremor | De la pregunta al gráfico, de extremo a extremo | Pendiente |
 | **6** | Endurecimiento: JWT, TLS interno, observabilidad, copias | Deuda de severidad Alta pagada | Pendiente |
 

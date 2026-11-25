@@ -27,7 +27,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 | ID | Deuda | Severidad | Estado | Se paga en |
 |---|---|---|---|---|
-| [TD-001](#td-001) | El modelo 7B no cabe completo en la GPU (6 GB) | Media | Mitigada | Fase 4 |
+| [TD-001](#td-001) | El modelo 7B no cabe completo en la GPU (6 GB) | Media | Mitigada | Con clave de NIM |
 | [TD-002](#td-002) | Trino no lee Unity Catalog OSS para tablas Delta | Media | Pagada | 2026-11-25 |
 | [TD-003](#td-003) | MinIO Community archivado, con imagen de un tercero | Media | Aceptada | Después del MVP |
 | [TD-004](#td-004) | La captura global copia datos sensibles a Kafka y Bronze | Alta | Mitigada | Fase 6 |
@@ -44,10 +44,10 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-015](#td-015) | Sin observabilidad ni alertas de infraestructura | Media | Abierta | Fase 6 |
 | [TD-016](#td-016) | Sin integración continua | Media | Pagada | 2026-11-25 |
 | [TD-017](#td-017) | Sin copias de seguridad | Media | Abierta | Fase 6 |
-| [TD-018](#td-018) | Text-to-SQL sin conjunto de evaluación | Media | Abierta | Fase 4 |
+| [TD-018](#td-018) | Text-to-SQL sin conjunto de evaluación | Media | Pagada | 2026-11-25 |
 | [TD-019](#td-019) | Tremor con poco mantenimiento | Media | Pendiente de decisión | Fase 5 |
-| [TD-020](#td-020) | Servicios sin probar en ejecución | Media | Abierta | Fases 3 y 4 |
-| [TD-021](#td-021) | NVIDIA NIM envía datos a un tercero | Alta | Abierta | Fase 4 |
+| [TD-020](#td-020) | Servicios sin probar en ejecución | Media | Mitigada | Con clave de NIM |
+| [TD-021](#td-021) | NVIDIA NIM envía datos a un tercero | Alta | Abierta | Con clave de NIM |
 | [TD-022](#td-022) | Exposición a Internet de la demo del TFG | Alta | Aceptada | Después del MVP |
 | [TD-023](#td-023) | Langfuse 2 sin parches de seguridad | Media | Abierta | Fase 6 |
 | [TD-024](#td-024) | Imágenes fijadas por tag, no por digest | Baja | Abierta | Fase 6 |
@@ -62,9 +62,10 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** El diseño suponía 8 GB de VRAM. `nvidia-smi` informa de 6144 MiB, y la misma GPU dibuja el escritorio de Windows, que deja unos 3,6 GB libres. `qwen2.5-coder:7b-instruct-q4_K_M` pesa 4,68 GB y necesita entre 5 y 5,5 GB en ejecución.
 - **Riesgo.** Un modelo más pequeño puede generar peor SQL. Además, la GTX 1060 (Pascal) está en la última rama de controladores que la admite (R580); Ollama [exige el 570 o superior](https://docs.ollama.com/gpu) para esta generación.
-- **Mitigación actual.** El modelo local por defecto es `qwen2.5-coder:3b-instruct-q4_K_M` (1,93 GB), que cabe en la VRAM libre. Como alternativa de más calidad, `LLM_PROVIDER=nim` usa NVIDIA NIM ([TD-021](#td-021)). La GPU es visible desde los contenedores (comprobado el 2026-11-24 y el 2026-11-25: controlador 582.66, 4164 MiB libres).
-- **Plan de pago.** En la Fase 4, medir con el conjunto de TD-018 la precisión del SQL y el tiempo de respuesta de 3B, 7B con capas en CPU y NIM, y fijar el modelo por defecto con esos datos.
-- **Disparador.** Precisión de ejecución del 3B inferior al 80 %, o respuesta p95 superior a 30 s.
+- **Mitigación actual.** El modelo local por defecto es `qwen2.5-coder:3b-instruct-q4_K_M` (1,9 GB), que cabe entero en la GPU. Como alternativa, `LLM_PROVIDER=nim` ([TD-021](#td-021)).
+- **Medido** (2026-11-25, commit `c8fd912`). 37 de 37 capas en la GPU, 2084 MiB de VRAM con contexto de 4096 (3490 MiB en total con el escritorio; quedan 2540) y unos 28 tokens por segundo. Latencia completa: p50 de 3,2 s y p95 de 4,2 s, muy por debajo de los 30 s; la primera pregunta, con carga del modelo, 14 s. **Precisión de ejecución: 72 % (18 de 25) en preguntas no vistas**, 96 % (72 de 75) en las usadas para ajustar.
+- **Disparador alcanzado.** 72 % está por debajo del 80 %. El usuario ha decidido seguir con el 3B hasta disponer de clave de NIM.
+- **Plan de pago.** Medir con el mismo conjunto el 7B con capas en CPU y NIM (`python -m lakehouse_api.evals --split test`), y fijar el modelo por defecto con esos datos.
 
 <a id="td-002"></a>
 ### TD-002 · Trino no lee Unity Catalog OSS para tablas Delta
@@ -75,7 +76,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
   - La [integración oficial de Unity Catalog con Trino](https://github.com/unitycatalog/unitycatalog/blob/v0.7.0/docs/integrations/unity-catalog-trino.md) usa Iceberg REST y requiere tablas Delta con UniForm. delta-rs [no permite activarlo](https://github.com/delta-io/delta-rs/issues/3299).
 - **Riesgo.** Dos registros de metadatos que pueden divergir, y dependencia de una opción de Trino sin documentar.
 - **Decisión.** **Opción A, confirmada:** `hive.metastore=file` sobre MinIO, con registro de tablas desde el worker (`system.register_table`). No añade contenedores. Descartadas para el MVP: Hive Metastore (contenedor, base de datos y unos 768 MiB más) y Gold en Iceberg (cambia la decisión de usar Delta Lake).
-- **Pago.** Pagada el 2026-11-25 (commit `999847d`). `medallion-transform` registra las 11 tablas Silver y los 14 modelos Gold en los dos catálogos a partir de las mismas definiciones, y los repara cada 10 minutos. `python -m medallion_worker catalogs` compara Trino, Unity Catalog y lo declarado (tablas, columnas, tipos, ubicación y descripción): 25 tablas, 0 diferencias, también tras reiniciar. La comparación forma parte de `scripts/test_integration.sh`.
+- **Pago.** Pagada el 2026-11-25 (commit `999847d`). `medallion-transform` registra las 11 tablas Silver y los 16 modelos Gold en los dos catálogos a partir de las mismas definiciones, y los repara cada 10 minutos. `python -m medallion_worker catalogs` compara Trino, Unity Catalog y lo declarado (tablas, columnas, tipos, ubicación y descripción): 27 tablas, 0 diferencias, también tras reiniciar. La comparación forma parte de `scripts/test_integration.sh`.
 - **Queda como límite.** El metastore `file` sigue sin documentar: antes de actualizar Trino, repetir la integración.
 - **Disparador.** Una versión de Trino elimina el metastore `file`. En ese caso, Hive Metastore.
 
@@ -107,7 +108,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** PostgreSQL rechaza `UPDATE` y `DELETE` en tablas publicadas que no tienen clave primaria ni `REPLICA IDENTITY`. Además, cada tabla con datos genera un topic.
 - **Riesgo.** Errores de escritura en el ERP, y presión de memoria en Kafka y Connect.
-- **Mitigación actual.** `scripts/cdc.py prepare` asigna `REPLICA IDENTITY FULL` a las tablas que lo necesitan. Probado: con los módulos del MVP, las 481 tablas tienen clave primaria; en una tabla de prueba sin ella se reprodujo el error y el script lo resolvió. Con unos 200 topics, Kafka usa 673 MiB y Connect, hasta 951 MiB de sus 1280 (74 %), medido el 2026-11-24 tras el snapshot inicial.
+- **Mitigación actual.** `scripts/cdc.py prepare` asigna `REPLICA IDENTITY FULL` a las tablas que lo necesitan. Probado: con los módulos del MVP, las 481 tablas tienen clave primaria; en una tabla de prueba sin ella se reprodujo el error y el script lo resolvió. Con unos 200 topics, Kafka usa 673 MiB y Connect, hasta 951 MiB de sus 1280 (74 %), medido el 2026-11-24 tras el snapshot inicial. El 2026-11-25, tras horas de uso, Connect llegó al 93 %: su límite sube a 1536 MiB.
 - **Pruebas.** `scripts/tests/test_cdc.py` ejecuta `prepare` y `check` contra un PostgreSQL desechable con la configuración, los roles y el SQL reales: reproduce el bloqueo, comprueba que se resuelve y que una tabla posterior lo vuelve a necesitar. Forma parte de `validate.sh`. `scripts/init_odoo.sh` repite `prepare` tras instalar módulos, antes de que Odoo vuelva a escribir.
 - **Plan de pago.** Queda un caso: instalar un módulo con tablas sin clave primaria desde la interfaz de Odoo, sin pasar por el script. En la Fase 6, alertar de tablas publicadas sin identidad.
 - **Disparador.** Error `cannot update table ... because it does not have a replica identity`, o Connect por encima del 80 % de su límite.
@@ -229,10 +230,11 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-018 · Text-to-SQL sin conjunto de evaluación
 
 - **Contexto.** No hay preguntas de referencia con su SQL y su resultado esperados.
-- **Riesgo.** Respuestas incorrectas pero verosímiles, y ningún criterio objetivo para elegir modelo o prompt.
-- **Mitigación actual.** El SQL ejecutado se mostrará siempre junto al resultado.
-- **Plan de pago.** Al menos 50 preguntas de los cinco dominios, medidas por precisión de ejecución, en la Fase 4.
-- **Disparador.** Cualquier cambio de modelo, de proveedor o de prompt.
+- **Pago.** Pagada el 2026-11-25 (commit `c8fd912`). `services/backend/src/lakehouse_api/evals` contiene 100 preguntas de los cinco dominios con su SQL de referencia, y un comando que mide la precisión de ejecución: compara resultados, no texto. Admite varias lecturas válidas de una pregunta, columnas de más y empates.
+- **Método.** 75 preguntas (`dev`) sirven para ajustar; 25 (`test`) solo para medir. Dos veces se ajustó algo después de ver los fallos de `test`: esas preguntas pasaron a `dev` y se escribieron otras. La medida de `test` se hizo una vez por tanda.
+- **Resultado con el 3B.** `test`: 76 %, 72 % y 72 % en las tres tandas; `dev`: 96 %. Tras la última se añadieron dos correcciones deterministas (alias en `GROUP BY` y tabla de la columna que falta): 91 de 100, pero esa cifra ya no es independiente.
+- **Lo aprendido.** El modelo mejora más con un Gold que no exige filtros obligatorios que con más instrucciones: por eso facturas y abonos, o pedidos y presupuestos, son tablas distintas.
+- **Disparador.** Cualquier cambio de modelo, de proveedor, de prompt o de modelos Gold: volver a medir.
 
 <a id="td-019"></a>
 ### TD-019 · Tremor con poco mantenimiento
@@ -250,8 +252,10 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Errores que solo aparecen en ejecución en lo que falta: Unity Catalog, Ollama, NVIDIA NIM (no hay clave para probarlo) y el conjunto completo con 22 GB de RAM.
 - **Mitigación actual.** Perfiles por capa: cada fase arranca solo lo que valida. El 2026-11-25, `check_env.sh --gpu` termina con 0 fallos (22019 MiB, usuario sin privilegios y GPU en contenedor) y Caddy sirve un certificado público válido ([TD-022](#td-022)).
 - **Fase 2 en ejecución** (2026-11-25, SSD). Tiempos de arranque hasta estar sanos: `source` 12 s, `streaming` 22 s, MinIO 6 s, `apps` 8 s, `observability` 13 s. Los 42 885 mensajes de los 198 topics están en Bronze, sin pérdidas ni repeticiones, tras un `kill -9` a mitad de la carga, 100 s con MinIO parado y un reinicio completo de Docker. Un cambio en Odoo se lee en Delta a los 35 s (lote de 30 s). El worker alcanzó 129 MiB de 1536. Ningún secreto de `.env` ni columna excluida en Bronze.
-- **Plan de pago.** Unity Catalog y Trino con las tablas reales en la Fase 3, `ai` y NIM en la Fase 4. Antes de probar el conjunto completo, revisar [TD-026](#td-026).
-- **Disparador.** Inicio de cada fase.
+- **Fases 3 y 4 en ejecución** (2026-11-25). Unity Catalog, Trino, Ollama, Langfuse con trazas reales y los 15 servicios a la vez: sanos en 59 s y 5,2 GB de RAM usada en WSL.
+- **Queda.** NVIDIA NIM (no hay clave) y la exposición pública desde fuera de la red.
+- **Plan de pago.** Probar NIM cuando haya clave.
+- **Disparador.** Cambio de proveedor del LLM.
 
 <a id="td-021"></a>
 ### TD-021 · NVIDIA NIM envía datos a un tercero
@@ -259,7 +263,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** `LLM_PROVIDER=nim` envía el esquema de Gold y la pregunta a la API de NVIDIA. Sus [términos de prueba](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf) (consultados el 2026-11-24) solo permiten pruebas internas y evaluación (1.4), prohíben incluir datos confidenciales o personales (2.6) y autorizan a NVIDIA a usar lo enviado y lo generado para mejorar sus productos, incluidos sus modelos (3.3).
 - **Riesgo.** Una pregunta puede contener datos personales («ventas a Juan Pérez»). Dependencia de un servicio gratuito cuyo catálogo cambia: el 2026-11-24 ya no incluía Qwen Coder. En los foros de NVIDIA se habla de 40 peticiones por minuto, sin confirmación oficial.
 - **Mitigación actual.** Desactivado por defecto. La API no arranca con `nim` sin clave, exige HTTPS y no muestra la clave en logs, errores ni respuestas (con pruebas). `GET /api/llm` y la interfaz indican que el prompt sale del host. Nunca se envían filas de resultados.
-- **Plan de pago.** En la Fase 4: aviso antes de la primera pregunta, detección de datos personales en la pregunta y prueba con una clave real. El modelo `nvidia/nemotron-3.5-lightning-30b-a3b` figura en el catálogo público, pero no se ha ejecutado.
+- **Fase 4.** El soporte sigue intacto: misma interfaz, sin enviar filas, y de los errores de Trino solo los de análisis, que no contienen datos. La salida estructurada de NIM no se usa porque no está probada: se pide JSON en el prompt y se comprueba al recibirlo.
+- **Plan de pago.** Antes de activarlo: aviso antes de la primera pregunta, detección de datos personales en la pregunta y prueba con una clave real. El modelo `nvidia/nemotron-3.5-lightning-30b-a3b` figura en el catálogo público, pero no se ha ejecutado.
 - **Disparador.** **Bloquea el uso de NIM con datos reales.** También un cambio de términos o la retirada del modelo.
 
 <a id="td-022"></a>
@@ -288,7 +293,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-023 · Langfuse 2 sin parches de seguridad
 
 - **Contexto.** Se instala Langfuse 2 (`2.95.11`) porque solo necesita PostgreSQL. Las versiones 3 y 4 requieren ClickHouse, Redis y S3, que no caben en el presupuesto. Langfuse [declara la versión 2 en fin de vida](https://langfuse.com/docs/compatibility), sin parches de seguridad.
-- **Riesgo.** Vulnerabilidades sin corregir en un servicio que guarda prompts y SQL. Los SDK actuales no son compatibles: hay que usar el de Python v2.
+- **Riesgo.** Vulnerabilidades sin corregir en un servicio que guarda prompts y SQL. Los SDK actuales no son compatibles, y el de Python v2 tampoco se mantiene: el backend usa la API HTTP de ingesta.
 - **Mitigación actual.** Solo en `127.0.0.1`, fuera de Caddy, sin telemetría y con el registro cerrado. Probado: claves falsas rechazadas, registro desactivado y una traza guardada con el SDK 2.60. Usa 280 MiB de 768.
 - **Plan de pago.** En la Fase 6, revisar si una versión con soporte cabe en el hardware, o sustituirlo por un registro de trazas propio.
 - **Disparador.** Vulnerabilidad crítica, datos reales o necesidad de acceso desde fuera.
@@ -320,8 +325,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** Medido el 2026-11-25. WSL puede ocupar 22 GB de los 32 del equipo, y la caché de disco de Linux cuenta como memoria en uso para Windows: 12 GB tras compilar las imágenes, con los servicios usando 2,6. Con un navegador abierto, la memoria confirmada llegó a 44 GB y Windows amplió su fichero de paginación, que es automático, hasta dejar `C:` con 4,1 GB.
 - **Riesgo.** Si se llena `C:`, falla Windows.
 - **Mitigación actual.**
-  - **Tope de WSL: de 22 a 15 GB.** Es lo que de verdad protege `C:`. `autoMemoryReclaim=gradual` también está puesto ([SETUP_WSL](SETUP_WSL.md#3-wslconfig)), pero no basta: con los servicios en marcha la máquina nunca está ociosa y la caché no se devuelve (13 GB tras descargar imágenes).
-  - Límites ajustados a lo medido: de 19 840 a 12 864 MiB con Trino, Unity Catalog y los dos servicios nuevos en marcha. En reposo, los 14 servicios usan unos 4,3 GB.
+  - **Tope de WSL: de 22 a 16 GB.** Es lo que de verdad protege `C:`. `autoMemoryReclaim=gradual` también está puesto ([SETUP_WSL](SETUP_WSL.md#3-wslconfig)), pero no basta: con los servicios en marcha la máquina nunca está ociosa y la caché no se devuelve (13 GB tras descargar imágenes).
+  - Límites ajustados a lo medido: de 19 840 a 13 632 MiB con todo el conjunto, incluidos Ollama y los dos servicios nuevos. Con los 15 servicios en marcha, WSL usa 5,2 GB.
   - `check_env.sh` avisa por debajo de 20 GB libres. `wsl --shutdown` devuelve la memoria en el acto.
 - **Plan de pago.** Medir `C:` y la memoria confirmada con el conjunto completo en marcha y un día de uso.
 - **Disparador.** Menos de 10 GB libres en `C:` antes de una descarga o de una compilación.
