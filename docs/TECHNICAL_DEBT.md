@@ -42,7 +42,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-013](#td-013) | Unity Catalog en modo desarrollo | Media | Abierta | Fases 3 y 6 |
 | [TD-014](#td-014) | Credenciales raíz compartidas y tráfico interno sin TLS | Media | Mitigada | Fase 6 |
 | [TD-015](#td-015) | Sin observabilidad ni alertas de infraestructura | Media | Abierta | Fase 6 |
-| [TD-016](#td-016) | Sin integración continua | Media | Mitigada | Fase 2 |
+| [TD-016](#td-016) | Sin integración continua | Media | Mitigada | Fase 3 |
 | [TD-017](#td-017) | Sin copias de seguridad | Media | Abierta | Fase 6 |
 | [TD-018](#td-018) | Text-to-SQL sin conjunto de evaluación | Media | Abierta | Fase 4 |
 | [TD-019](#td-019) | Tremor con poco mantenimiento | Media | Pendiente de decisión | Fase 5 |
@@ -52,7 +52,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-023](#td-023) | Langfuse 2 sin parches de seguridad | Media | Abierta | Fase 6 |
 | [TD-024](#td-024) | Imágenes fijadas por tag, no por digest | Baja | Abierta | Fase 6 |
 | [TD-025](#td-025) | El disco del proyecto y de Docker anuncia un fallo | Crítica | Pagada | 2026-11-25 |
-| [TD-026](#td-026) | El equipo va justo de disco y de memoria | Media | Abierta | Fase 3 |
+| [TD-026](#td-026) | La memoria de WSL puede llenar la unidad del sistema | Media | Abierta | Fase 3 |
 | [TD-027](#td-027) | PostgreSQL no arranca solo al reiniciar Docker Desktop | Baja | Abierta | Fase 6 |
 
 ## Detalle
@@ -209,7 +209,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** El disparador («primer código en `services/`») se alcanzó en la Fase 1: había pruebas, pero nada garantizaba que se ejecutaran antes de llegar a `main`.
 - **Riesgo.** Un cambio que no pasa las pruebas, o un secreto, llega a `main`.
 - **Mitigación actual.** `.github/workflows/ci.yml` se ejecuta en cada push y pull request a `main`, con permisos de solo lectura y acciones fijadas por commit. Ejecuta `scripts/validate.sh` (incluye gitleaks sobre los ficheros y todo el historial, y las pruebas de TD-005 y TD-022) y `scripts/test_integration.sh`. Los controles negativos, comprobados el 2026-11-25: 8 mutaciones de Caddy, CDC y roles, y un secreto inventado, hacen fallar la validación.
-- **Plan de pago.** Comprobar la primera ejecución en GitHub. Activar la protección de la rama `main` para que el resultado sea obligatorio: es un ajuste del repositorio, no del código.
+- **Primera ejecución** (2026-11-25, commit `67bb45a`). En verde: validación y secretos, 91 s; Kafka, MinIO y worker, 65 s.
+- **Plan de pago.** Un push directo a `main` se comprueba después de llegar, no antes. Para pagarla, activar la protección de la rama y exigir los dos trabajos: es un ajuste del repositorio que hace una persona.
 - **Disparador.** Una ejecución en rojo en `main` sin corregir.
 <a id="td-017"></a>
 ### TD-017 · Sin copias de seguridad
@@ -245,7 +246,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Errores que solo aparecen en ejecución en lo que falta: Unity Catalog, Ollama, NVIDIA NIM (no hay clave para probarlo) y el conjunto completo con 22 GB de RAM.
 - **Mitigación actual.** Perfiles por capa: cada fase arranca solo lo que valida. El 2026-11-25, `check_env.sh --gpu` termina con 0 fallos (22019 MiB, usuario sin privilegios y GPU en contenedor) y Caddy sirve un certificado público válido ([TD-022](#td-022)).
 - **Fase 2 en ejecución** (2026-11-25, SSD). Tiempos de arranque hasta estar sanos: `source` 12 s, `streaming` 22 s, MinIO 6 s, `apps` 8 s, `observability` 13 s. Los 42 885 mensajes de los 198 topics están en Bronze, sin pérdidas ni repeticiones, tras un `kill -9` a mitad de la carga, 100 s con MinIO parado y un reinicio completo de Docker. Un cambio en Odoo se lee en Delta a los 35 s (lote de 30 s). El worker alcanzó 129 MiB de 1536. Ningún secreto de `.env` ni columna excluida en Bronze.
-- **Plan de pago.** Unity Catalog y Trino con las tablas reales en la Fase 3, `ai` y NIM en la Fase 4. Antes de probar el conjunto completo, resolver [TD-026](#td-026).
+- **Plan de pago.** Unity Catalog y Trino con las tablas reales en la Fase 3, `ai` y NIM en la Fase 4. Antes de probar el conjunto completo, revisar [TD-026](#td-026).
 - **Disparador.** Inicio de cada fase.
 
 <a id="td-021"></a>
@@ -307,14 +308,13 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Pendiente de una persona.** Sustituir el disco. Antes de desecharlo, borrarlo de forma segura: conserva una copia antigua del repositorio con `.env`.
 
 <a id="td-026"></a>
-### TD-026 · El equipo va justo de disco y de memoria
+### TD-026 · La memoria de WSL puede llenar la unidad del sistema
 
-- **Contexto.** Medido el 2026-11-25, con todo lo anterior a la Fase 3 descargado. `E:` tiene 9,4 GB libres, porque conserva una copia manual sin uso del disco de Docker (18,2 GB, en `docker-data\DockerDesktopWSL\disk`); sin ella serían unos 27 GB. Faltan por descargar Unity Catalog, Ollama y el modelo. Además, WSL puede ocupar 22 GB de los 32: con un navegador abierto, la memoria confirmada llegó a 44 GB y Windows amplió su fichero de paginación hasta dejar `C:` con 4,1 GB.
-- **Riesgo.** Si `E:` se llena, Docker se detiene y puede dañar sus volúmenes. Si se llena `C:`, falla Windows.
-- **Mitigación actual.** `check_env.sh` avisa por debajo de 20 GB. `docker image prune` y `docker builder prune` dejan espacio para reutilizar dentro del disco virtual, aunque no lo encogen. Tras `wsl --shutdown`, `C:` recuperó 11,8 GB.
-- **Plan de pago.** Antes de la Fase 3, eliminar la copia sin uso y medir de nuevo. Evaluar `autoMemoryReclaim` en `.wslconfig` para que WSL devuelva la caché de disco, y bajar los límites de memoria que las medidas muestran holgados.
-- **Disparador.** Menos de 10 GB libres en `C:` o en `E:` antes de una descarga. **Ya alcanzado en `E:`.**
-
+- **Contexto.** Medido el 2026-11-25. WSL puede ocupar 22 GB de los 32 del equipo, y la caché de disco de Linux cuenta como memoria en uso para Windows: 12 GB tras compilar las imágenes, con los servicios usando 2,6. Con un navegador abierto, la memoria confirmada llegó a 44 GB y Windows amplió su fichero de paginación, que es automático, hasta dejar `C:` con 4,1 GB.
+- **Riesgo.** Si se llena `C:`, falla Windows. Afecta sobre todo a las compilaciones y, en la Fase 3, a Trino con 5 GB más.
+- **Mitigación actual.** `check_env.sh` avisa por debajo de 20 GB libres. Tras `wsl --shutdown`, `C:` recuperó 11,8 GB. `E:`, donde está Docker (21,6 GB), tiene 60,5 GB libres después de eliminar una copia sin uso de 18,2 GB: suficiente para Unity Catalog, Ollama y el modelo.
+- **Plan de pago.** Antes de la Fase 3, evaluar `autoMemoryReclaim` en `.wslconfig`, para que WSL devuelva la caché, y bajar los límites de memoria que las medidas muestran holgados.
+- **Disparador.** Menos de 10 GB libres en `C:` antes de una descarga o de una compilación.
 <a id="td-027"></a>
 ### TD-027 · PostgreSQL no arranca solo al reiniciar Docker Desktop
 
@@ -346,4 +346,4 @@ Añade también la fila correspondiente en la tabla de resumen.
 | 2026-11-24 | Fase 1. Mitigadas: TD-001, TD-002 (opción A, probada), TD-004, TD-005 y TD-006. Aceptada: TD-003. TD-012 sube a Alta. TD-016 se reduce a integración continua. Nuevas: TD-021 a TD-024. |
 | 2026-11-24 | Puesta en marcha persistente. TD-005: consumo de Connect actualizado. |
 | 2026-11-25 | TD-022: esquema 443/8443 con un solo nombre, certificado validado por `check_exposure.py` y contraseña rotada. TD-020: 22 GB, GPU y certificado público comprobados. Nueva, Crítica: TD-025. |
-| 2026-11-25 | Fase 2, Bronze. Pagada: TD-025. Mitigada: TD-014 (usuarios de MinIO). TD-003 con copia restaurable. TD-005 con prueba automática. TD-022: `Secure` en las cookies y exposición de más, sin accesos. TD-010 y TD-020 actualizadas. Nuevas: TD-026 y TD-027. |
+| 2026-11-25 | Fase 2, Bronze. Pagada: TD-025. Mitigadas: TD-014 (usuarios de MinIO) y TD-016 (integración continua en verde). TD-003 con copia restaurable. TD-005 con prueba automática. TD-022: `Secure` en las cookies y exposición de más, sin accesos. TD-010 y TD-020 actualizadas. Nuevas: TD-026 y TD-027. |

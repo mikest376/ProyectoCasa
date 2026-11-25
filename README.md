@@ -1,5 +1,7 @@
 # Odoo Data Lakehouse
 
+[![ci](https://github.com/mikest376/ProyectoCasa/actions/workflows/ci.yml/badge.svg)](https://github.com/mikest376/ProyectoCasa/actions/workflows/ci.yml)
+
 Plataforma analítica local que replica Odoo 17 casi en tiempo real en un lakehouse abierto y permite consultarlo en lenguaje natural. Funciona en un solo equipo con Docker Compose y un modelo de lenguaje local: por defecto, los datos del ERP no salen del host.
 
 > **Estado: Fase 2, Bronze.** Un cambio en Odoo llega a Kafka en torno a un segundo y a Delta Lake en el lote siguiente (30 s). Las 198 tablas con datos están en Bronze, sin pérdidas tras caídas forzadas del worker, de MinIO y de Docker. La API y el frontend son esqueletos funcionales. El detalle de lo que falta por probar está en [TD-020](docs/TECHNICAL_DEBT.md#td-020).
