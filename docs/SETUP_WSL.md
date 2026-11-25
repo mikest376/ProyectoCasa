@@ -84,7 +84,7 @@ swap=4GB
 autoMemoryReclaim=gradual
 ```
 
-`autoMemoryReclaim=gradual` devuelve a Windows la caché de disco de Linux poco a poco ([documentación](https://learn.microsoft.com/en-us/windows/wsl/wsl-config); por defecto, `dropCache`). Sin ello, las compilaciones llenan la memoria y Windows amplía su fichero de paginación en `C:` ([TD-026](TECHNICAL_DEBT.md#td-026)).
+`autoMemoryReclaim=gradual` devuelve a Windows la caché de disco de Linux cuando WSL está ocioso ([documentación](https://learn.microsoft.com/en-us/windows/wsl/wsl-config); por defecto, `dropCache`). Con los servicios en marcha apenas actúa: lo que protege `C:` es el tope de `memory`. Una compilación grande llena esa memoria y Windows amplía su fichero de paginación en `C:`; si queda poco espacio, reinicia WSL ([paso 5](#5-reiniciar-y-verificar), [TD-026](TECHNICAL_DEBT.md#td-026)).
 
 Afecta a todas las distribuciones, incluida la de Docker Desktop. **Deshacer:** borra o renombra el fichero.
 

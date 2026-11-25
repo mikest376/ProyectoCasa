@@ -194,7 +194,7 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 | `apps` | Worker (ingesta, transformación y mantenimiento), FastAPI, Next.js | Probado de extremo a extremo, también a través de Caddy |
 | `observability` | Langfuse 2 | Probado |
 | `caddy` | Caddy | Probado en `127.0.0.1`, con certificado público |
-| `query` | Trino | Probado: 25 tablas, iguales en los dos catálogos |
+| `query` | Trino | Probado: 27 tablas, iguales en los dos catálogos |
 | `ai` | Ollama | Probado: modelo 3B entero en la GPU |
 
 | Interfaz | Dirección |
@@ -209,7 +209,7 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 ```bash
 docker compose --profile "*" down     # parar todo, conservando los datos
 bash scripts/validate.sh              # lint, tipos, pruebas, secretos y configuración
-bash scripts/test_integration.sh      # permisos de MinIO y recorrido de Kafka a Bronze
+bash scripts/test_integration.sh      # permisos de MinIO y recorrido de Kafka a Gold
 ```
 
 Tras editar `infra/caddy`, `infra/odoo` o `infra/postgres`, repite el `up` con `--build`: su configuración va dentro de la imagen ([TD-027](docs/TECHNICAL_DEBT.md#td-027)).
@@ -300,7 +300,7 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
 
 ### Durante
 
-- Expón lo imprescindible: minutos antes, no días antes.
+- Si no es la demo permanente, expón lo imprescindible: minutos antes, no días antes.
 - Vigila los accesos: `docker compose logs -f caddy`.
 - **Corte inmediato:** `docker compose --profile caddy stop caddy`.
 

@@ -2,7 +2,7 @@
 
 | Fichero | Contenido |
 |---|---|
-| `postgresql.conf` | CDC lógico (`wal_level=logical`), tope de WAL y memoria dentro de 1024 MiB |
+| `postgresql.conf` | CDC lógico (`wal_level=logical`), tope de WAL y memoria dentro de 512 MiB |
 | `init/10-roles-and-database.sql` | Roles de Odoo y Debezium, base de datos y extensiones. Se ejecuta solo al crear el volumen |
 | `sql/replica_identity.sql` | `REPLICA IDENTITY FULL` en tablas sin clave primaria ([TD-005](../../docs/TECHNICAL_DEBT.md#td-005)) |
 | `sql/publication.sql` | Publicación para todas las tablas del esquema `public` |

@@ -14,7 +14,7 @@ Detalle técnico del proyecto. La vista general está en el [README](../README.m
 
 ## Componentes y versiones
 
-Tags comprobados en sus registros el 2026-11-24.
+Tags comprobados en sus registros el 2026-11-24. PostgreSQL, Odoo, Trino y Caddy usan imágenes propias con su configuración dentro, construidas sobre estas.
 
 | Componente | Imagen | Función |
 |---|---|---|
@@ -267,7 +267,7 @@ Caddy publica Odoo y el frontend, con `/api` hacia FastAPI. El procedimiento est
 | Tamaño de petición | 64 KB en la aplicación, 25 MB en Odoo |
 | Credenciales | La cabecera `Authorization` no llega a Odoo ni a FastAPI, y se oculta en los logs. Las cookies no llegan al frontend ni a FastAPI |
 | Cookies de Odoo | Caddy añade `Secure`: el navegador no las envía en claro al abrir `http://nombre` |
-| Contenedor | Solo lectura, sin privilegios adicionales, sin API de administración y sin reinicio automático |
+| Contenedor | Solo lectura, sin privilegios adicionales, sin API de administración y, por defecto, sin reinicio automático |
 | Verificación | `scripts/tests/test_caddy.sh` con servicios simulados, y `scripts/check_exposure.py` con los reales |
 
 ## Integración continua
@@ -277,7 +277,7 @@ Caddy publica Odoo y el frontend, con `/api` hacia FastAPI. El procedimiento est
 | Trabajo | Script | Comprueba |
 |---|---|---|
 | Validación y secretos | `scripts/validate.sh` | Compose, presupuesto, shellcheck, hadolint, actionlint, secretos (gitleaks, ficheros e historial), Caddy, CDC sobre PostgreSQL desechable, `ruff`, `mypy --strict`, `pytest` y compilación |
-| Kafka, MinIO y worker | `scripts/test_integration.sh` | Permisos de cada usuario de MinIO y recorrido de Kafka a Bronze con una caída simulada |
+| Kafka, MinIO y worker | `scripts/test_integration.sh` | Permisos de cada usuario de MinIO, recorrido de Kafka a Bronze con una caída simulada, y de Bronze a Gold con Trino y Unity Catalog comparados |
 
 El token del workflow solo lee, y las acciones están fijadas por commit.
 
@@ -295,7 +295,7 @@ El token del workflow solo lee, y las acciones están fijadas por commit.
 
 | Decisión | Motivo | Alternativa descartada |
 |---|---|---|
-| Worker en Python con delta-rs y Polars | Cabe en 1,5 GB de RAM | Spark Structured Streaming |
+| Worker en Python con delta-rs y Polars | Cada proceso cabe en 512 MiB | Spark Structured Streaming |
 | Kafka en modo KRaft | Un proceso menos | Kafka con Zookeeper |
 | Captura global en Bronze, sin secretos | Reproceso sin volver a Odoo | Lista cerrada de tablas |
 | Excluir columnas en vez de enmascararlas | Un hash de un secreto corto se puede atacar | `column.mask.*` |

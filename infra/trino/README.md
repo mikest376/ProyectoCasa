@@ -2,7 +2,7 @@
 
 | Fichero | Contenido |
 |---|---|
-| `jvm.config` | Heap fijo de 2 GB dentro de un contenedor de 2560 MiB |
+| `jvm.config` | Heap fijo de 2 GB dentro de un contenedor de 3072 MiB |
 | `config.properties` | Límites de memoria y duración por consulta |
 | `catalog/lakehouse.properties` | Catálogo Delta Lake con metastore en ficheros ([TD-002](../../docs/TECHNICAL_DEBT.md#td-002)) |
 | `access-control.json` | Qué puede hacer cada usuario |

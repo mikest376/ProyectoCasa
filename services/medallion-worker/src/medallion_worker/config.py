@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     worker_topic_pattern: str = r"^odoo\.public\..*"
 
     worker_batch_max_records: int = Field(default=5000, gt=0)
-    # Cota de memoria: el límite del contenedor es de 512 MiB.
+    # Cota de memoria: el límite del contenedor de ingesta es de 384 MiB.
     worker_batch_max_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
     worker_batch_max_seconds: float = Field(default=30.0, gt=0)
 

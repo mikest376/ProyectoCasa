@@ -137,7 +137,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 <a id="td-008"></a>
 ### TD-008 · Trino en un solo nodo
 
-- **Contexto.** Coordinador y worker comparten una JVM con 4 GB de heap y 1500 MB por consulta.
+- **Contexto.** Coordinador y worker comparten una JVM con 2 GB de heap y 800 MB por consulta.
 - **Riesgo.** Sin alta disponibilidad. Una consulta pesada falla o degrada a las demás.
 - **Mitigación actual.** Límites de memoria y tiempo en `infra/trino/config.properties`, `LIMIT` obligatorio en el backend y tablas Gold preagregadas.
 - **Plan de pago.** Separar coordinador y workers cuando haya hardware.
@@ -159,7 +159,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** KRaft con broker y controlador en un mismo proceso y factor de réplica 1.
 - **Riesgo.** Si se pierde el volumen, se pierden los eventos no ingeridos y los offsets de Debezium. Además, los offsets vuelven a empezar en 0: las coordenadas `(_topic, _partition, _offset)` de Bronze se repetirían con eventos distintos.
 - **Mitigación actual.** Volumen persistente y retención de 7 días. El origen permite repetir el snapshot.
-- **Mitigación actual (Silver).** Desde la Fase 3, la deduplicación usa `(_topic, _partition, _offset, source_lsn)` y el orden lo da el LSN: si se recrea el clúster de Kafka, los offsets repetidos no ocultan eventos nuevos (con prueba). Si se recrea **PostgreSQL**, el LSN vuelve a empezar y los cambios parecerían antiguos: habría que vaciar Silver y reconstruirlo desde Bronze.
+- **Mitigación actual (Silver).** Desde la Fase 3 (2026-11-25, commit `999847d`), la deduplicación usa `(_topic, _partition, _offset, source_lsn)` y el orden lo da el LSN: si se recrea el clúster de Kafka, los offsets repetidos no ocultan eventos nuevos (con prueba). Si se recrea **PostgreSQL**, el LSN vuelve a empezar y los cambios parecerían antiguos: habría que vaciar Silver y reconstruirlo desde Bronze.
 - **Plan de pago.** Tres brokers cuando haya hardware.
 - **Disparador.** Necesidad de alta disponibilidad.
 
@@ -168,7 +168,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Se usa `JsonConverter` con `schemas.enable=false` para ahorrar memoria y simplificar el worker.
 - **Riesgo.** Decimales, fechas y marcas de tiempo llegan como texto o enteros, y un cambio de esquema en Odoo puede pasar inadvertido.
-- **Mitigación actual.** El evento crudo se conserva en Bronze. Silver impone contratos (`contracts.py`): 11 tablas y 188 columnas con su tipo. Una columna que falta, un tipo distinto o un nulo no permitido detienen **esa tabla**, sin convertir nada en nulo: las demás siguen, Gold conserva lo anterior y el healthcheck de `medallion-transform` deja de pasar. `scripts/check_contracts.py` compara los contratos con el esquema real de Odoo: 0 diferencias el 2026-11-25. Hay pruebas de cada tipo de incumplimiento.
+- **Mitigación actual.** El evento crudo se conserva en Bronze. Desde el 2026-11-25 (commit `999847d`), Silver impone contratos (`contracts.py`): 11 tablas y 188 columnas con su tipo. Una columna que falta, un tipo distinto o un nulo no permitido detienen **esa tabla**, sin convertir nada en nulo: las demás siguen, Gold conserva lo anterior y el healthcheck de `medallion-transform` deja de pasar. `scripts/check_contracts.py` compara los contratos con el esquema real de Odoo: 0 diferencias el 2026-11-25. Hay pruebas de cada tipo de incumplimiento.
 - **Plan de pago.** Evaluar Apicurio con Avro en la Fase 6: la imagen de Debezium ya incluye los convertidores. Hasta entonces, repetir `check_contracts.py` al instalar o actualizar módulos.
 - **Disparador.** Dos incidencias de tipos, u otro consumidor de los topics.
 
@@ -186,7 +186,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Base H2 embebida y autorización desactivada. La plantilla de configuración 0.7.0 no permite indicar un endpoint S3 propio, y siguen abiertas las incidencias con MinIO ([#844](https://github.com/unitycatalog/unitycatalog/issues/844), [#1324](https://github.com/unitycatalog/unitycatalog/issues/1324)).
 - **Riesgo.** Sin permisos por tabla ni credenciales temporales: cada cliente necesita sus propias claves S3.
-- **Mitigación actual.** Unity Catalog se usa solo para metadatos, con la base en un volumen persistente. Probado el 2026-11-25: registro de 25 tablas externas en MinIO con descripciones de tabla y columna, sin credenciales de S3, y persistencia tras reiniciar (commit `999847d`). Si se pierde la base H2, `medallion-transform` la reconstruye en el siguiente ciclo.
+- **Mitigación actual.** Unity Catalog se usa solo para metadatos, con la base en un volumen persistente. Probado el 2026-11-25: registro de 27 tablas externas en MinIO con descripciones de tabla y columna, sin credenciales de S3, y persistencia tras reiniciar (commit `999847d`). Si se pierde la base H2, `medallion-transform` la reconstruye en el siguiente ciclo.
 - **Plan de pago.** En la Fase 6, pasar a PostgreSQL y activar la autorización.
 - **Disparador.** Otro servicio escribe en el catálogo, o hacen falta permisos por tabla.
 
@@ -217,6 +217,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Mitigación actual.** `.github/workflows/ci.yml` se ejecuta en cada push y pull request a `main`, con permisos de solo lectura y acciones fijadas por commit. Ejecuta `scripts/validate.sh` (incluye gitleaks sobre los ficheros y todo el historial, y las pruebas de TD-005 y TD-022) y `scripts/test_integration.sh`. Los controles negativos, comprobados el 2026-11-25: 8 mutaciones de Caddy, CDC y roles, y un secreto inventado, hacen fallar la validación.
 - **Primera ejecución** (2026-11-25, commit `67bb45a`). En verde: validación y secretos, 91 s; Kafka, MinIO y worker, 65 s.
 - **Pago.** Pagada el 2026-11-25 (commits `67bb45a` y `4741296`). El usuario activó la protección de `main` y se ha comprobado con la API de GitHub: pull request obligatorio, los dos trabajos exigidos con la rama al día y sin `push --force`. La protección no se aplica a los administradores: una cuenta propietaria todavía puede saltársela.
+
 <a id="td-017"></a>
 ### TD-017 · Sin copias de seguridad
 
@@ -247,11 +248,10 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-020 · Servicios sin probar en ejecución
 
 - **Contexto.** Probados el 2026-11-24 en un proyecto aislado, con datos de demostración y sin exponer nada: PostgreSQL, Odoo, Kafka, Debezium, MinIO, Trino, Langfuse, worker, backend, frontend y Caddy. Un cambio en Odoo llegó a Kafka en 0,3 a 1,3 segundos, y ningún contenedor superó su límite de memoria.
-- **Riesgo.** Errores que solo aparecen en ejecución en lo que falta: Unity Catalog, Ollama, NVIDIA NIM (no hay clave para probarlo) y el conjunto completo con 22 GB de RAM.
+- **Riesgo.** Errores que solo aparecen en ejecución en lo que falta: NVIDIA NIM, porque no hay clave, y la exposición pública desde fuera de la red.
 - **Mitigación actual.** Perfiles por capa: cada fase arranca solo lo que valida. El 2026-11-25, `check_env.sh --gpu` termina con 0 fallos (22019 MiB, usuario sin privilegios y GPU en contenedor) y Caddy sirve un certificado público válido ([TD-022](#td-022)).
 - **Fase 2 en ejecución** (2026-11-25, SSD). Tiempos de arranque hasta estar sanos: `source` 12 s, `streaming` 22 s, MinIO 6 s, `apps` 8 s, `observability` 13 s. Los 42 885 mensajes de los 198 topics están en Bronze, sin pérdidas ni repeticiones, tras un `kill -9` a mitad de la carga, 100 s con MinIO parado y un reinicio completo de Docker. Un cambio en Odoo se lee en Delta a los 35 s (lote de 30 s). El worker alcanzó 129 MiB de 1536. Ningún secreto de `.env` ni columna excluida en Bronze.
-- **Fases 3 y 4 en ejecución** (2026-11-25). Unity Catalog, Trino, Ollama, Langfuse con trazas reales y los 15 servicios a la vez: sanos en 59 s y 5,2 GB de RAM usada en WSL.
-- **Queda.** NVIDIA NIM (no hay clave) y la exposición pública desde fuera de la red.
+- **Fases 3, 4 y 5 en ejecución** (2026-11-25, commits `999847d`, `c8fd912` y `0cd14cc`). Unity Catalog, Trino, Ollama, Langfuse con trazas reales, la interfaz en un navegador real y los 15 servicios a la vez: sanos en 59 s y 5,2 GB de RAM usada en WSL.
 - **Plan de pago.** Probar NIM cuando haya clave.
 - **Disparador.** Cambio de proveedor del LLM.
 
@@ -271,7 +271,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** Excepción aprobada a [TD-009](#td-009): durante la presentación, Odoo y el frontend se publican a través de Caddy. Como solo hay un nombre público, el frontend usa el 443 y Odoo el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. El router redirige los tres puertos al equipo. La regla 11 de CLAUDE.md incluye el 8443 desde el 2026-11-25.
 - **Riesgo.** Equipo doméstico accesible desde Internet; una sola contraseña compartida, sin límite de intentos (la imagen oficial de Caddy no lo incluye); Odoo sin parches ([TD-012](#td-012)); Docker Desktop oculta la IP del cliente, así que Caddy no puede filtrar por IP; y los certificados públicos anuncian el dominio. Con un solo nombre, las cookies de Odoo también llegan al 443, porque no distinguen puertos.
 - **Mitigación actual.**
-  - `CADDY_BIND_IP=127.0.0.1` por defecto: exponer es un acto explícito de una persona. Caddy no se reinicia solo.
+  - `CADDY_BIND_IP=127.0.0.1` por defecto: exponer es un acto explícito de una persona. Por defecto, Caddy no se reinicia solo (`CADDY_RESTART=no`).
   - Contraseña en todas las rutas. Probado: sin credenciales válidas no pasa nadie, y 18 variantes de rutas peligrosas de Odoo (codificadas, con barras dobles, mayúsculas) devuelven 404 incluso con contraseña.
   - Caddy solo ve a Odoo, el frontend y FastAPI. Contenedor de solo lectura y sin privilegios adicionales.
   - `scripts/init_odoo.sh` cierra `admin/admin`, `demo/demo` y `portal/portal`. `scripts/check_exposure.py` lo comprueba y valida la cadena y el nombre del certificado servido en cada sitio: con una CA propia, no da el visto bueno.
@@ -279,10 +279,10 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Ensayo** (2026-11-24). Let's Encrypt emitió el certificado (TLS-ALPN, 443). En 6 minutos llegaron 168 peticiones, muchas de rastreadores que buscaban `.env` o `.git/config`: 115 respuestas 401, 53 redirecciones y ningún acceso. El script fallaba con `TLSV1_ALERT_INTERNAL_ERROR` porque enviaba `nombre:8443` como SNI y por el 443: publicar el puerto no bastaba. La contraseña apareció en una captura y se rotó: la antigua devuelve 401 en los dos puertos.
 - **Comprobado en `127.0.0.1` con el certificado real** (2026-11-25). `check_exposure.py`, 0 fallos; con `CADDY_TLS=internal`, un fallo por sitio, como debe. Odoo redirige con `:8443`, el WebSocket responde 101 y 17 variantes de rutas bloqueadas devuelven 404 con contraseña.
 - **Cookies de Odoo** (2026-11-25). Odoo no las marca con `Secure` y viajaban en claro al abrir `http://nombre`. Caddy lo añade a todas, sin duplicarlo. Lo prueban `scripts/tests/test_caddy.sh`, con el Caddyfile real y servicios simulados en una red interna, y `check_exposure.py`, con Odoo. La primera también cubre contraseña, rutas bloqueadas y cabeceras que no se reenvían, y se ejecuta en `validate.sh`.
-- **Exposición de más** (2026-11-25). Tras el ensayo, `.env` conservó la IP de la red local y Caddy quedó publicado de 09:43 a 13:42. Llegaron 67 peticiones: 44 respuestas 401, 23 redirecciones y ningún acceso. Caddy está retirado y `.env`, en modo local.
-- **Decisión del usuario** (2026-11-25). Mantener la demo publicada de forma permanente, solo con datos de demostración, y asumir sus riesgos: deja de ser una excepción temporal a [TD-009](#td-009) y [TD-012](#td-012). `.env` conserva la IP de la red local y `CADDY_RESTART=unless-stopped`; `.env.example` sigue en `127.0.0.1` y `no`. El Caddyfile va dentro de la imagen, para que arranque con Docker ([TD-027](#td-027)).
+- **Exposición de más** (2026-11-25). Tras el ensayo, `.env` conservó la IP de la red local y Caddy quedó publicado de 09:43 a 13:42. Llegaron 67 peticiones: 44 respuestas 401, 23 redirecciones y ningún acceso. Se retiró Caddy y `.env` volvió a modo local.
+- **Decisión del usuario** (2026-11-25, commit `4741296`). Mantener la demo publicada de forma permanente, solo con datos de demostración, y asumir sus riesgos: deja de ser una excepción temporal a [TD-009](#td-009) y [TD-012](#td-012). `.env` conserva la IP de la red local y `CADDY_RESTART=unless-stopped`; `.env.example` sigue en `127.0.0.1` y `no`. El Caddyfile va dentro de la imagen, para que arranque con Docker ([TD-027](#td-027)).
 - **Comprobado antes de publicar** (2026-11-25). Con el nombre y el certificado reales en `127.0.0.1`, `check_exposure.py` termina con **0 fallos**: certificado de Let's Encrypt válido hasta el 22 de febrero de 2027 en 443 y 8443, 401 sin credenciales, cookies con `Secure` y rutas de Odoo bloqueadas. El nombre público resuelve a la dirección del router.
-- **Interfaz a través de Caddy** (2026-11-25). Con el nombre y el certificado reales en `127.0.0.1` y un navegador real: 401 sin contraseña y 200 con ella en 443, `/api` y 8443; preguntas de los cinco dominios respondidas en 3,4 a 4,1 s; mismo origen, sin errores de CORS ni de cookies. La única respuesta de error es la de una pregunta rechazada a propósito.
+- **Interfaz a través de Caddy** (2026-11-25, commit `0cd14cc`). Con el nombre y el certificado reales en `127.0.0.1` y un navegador real: 401 sin contraseña y 200 con ella en 443, `/api` y 8443; preguntas de los cinco dominios respondidas en 3,4 a 4,1 s; mismo origen, sin errores de CORS ni de cookies. La única respuesta de error es la de una pregunta rechazada a propósito.
 - **Pendiente de una persona.** Publicar Caddy en la IP de la red local y probarlo desde fuera: CLAUDE.md reserva ese paso a una persona y no lo ha hecho el agente. Desde dentro de la red no se puede comprobar: la conexión al nombre público agota el tiempo, así que el router no parece admitir NAT de retorno (la prueba se hizo con Caddy sin publicar, por lo que no es concluyente).
 - **Límites conocidos.** Los scripts prueban desde el propio equipo, no desde Internet. Con la exposición permanente, la contraseña única sin límite de intentos y Odoo sin parches pesan más. Comprobar una contraseña cuesta CPU (bcrypt): muchas peticiones pueden frenar el equipo.
 - **Plan de pago.** Para dejar de asumirla: pagar TD-009 y TD-012, o poner delante un túnel con identidad. Mientras siga publicada: revisar los accesos (`docker compose logs caddy`), cambiar la contraseña con regularidad y no cargar datos reales.
@@ -323,11 +323,12 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Medido el 2026-11-25. WSL puede ocupar 22 GB de los 32 del equipo, y la caché de disco de Linux cuenta como memoria en uso para Windows: 12 GB tras compilar las imágenes, con los servicios usando 2,6. Con un navegador abierto, la memoria confirmada llegó a 44 GB y Windows amplió su fichero de paginación, que es automático, hasta dejar `C:` con 4,1 GB.
 - **Riesgo.** Si se llena `C:`, falla Windows.
-- **Mitigación actual.**
+- **Mitigación actual** (2026-11-25, commit `4741296`).
   - **Tope de WSL: de 22 a 16 GB.** Es lo que de verdad protege `C:`. `autoMemoryReclaim=gradual` también está puesto ([SETUP_WSL](SETUP_WSL.md#3-wslconfig)), pero no basta: con los servicios en marcha la máquina nunca está ociosa y la caché no se devuelve (13 GB tras descargar imágenes).
   - Límites ajustados a lo medido: de 19 840 a 13 632 MiB con todo el conjunto, incluidos Ollama y los dos servicios nuevos. Con los 15 servicios en marcha, WSL usa 5,2 GB.
   - `check_env.sh` avisa por debajo de 20 GB libres. `wsl --shutdown` devuelve la memoria en el acto.
-- **Plan de pago.** Medir `C:` y la memoria confirmada con el conjunto completo en marcha y un día de uso.
+- **Sigue pasando al compilar.** Tras construir todas las imágenes con los 15 servicios en marcha, la memoria confirmada llegó a 45 de 46 GB y `C:` bajó a 5,1 GB (disparador alcanzado). `wsl --shutdown` devolvió 15,6 GB; con todo arrancado de nuevo quedan 17,8 GB. Antes de una compilación grande, parar Docker y reiniciar WSL.
+- **Plan de pago.** Mover el fichero de paginación a `E:` o fijar su tamaño (cambio de Windows: lo decide el usuario). Medir `C:` con un día de uso.
 - **Disparador.** Menos de 10 GB libres en `C:` antes de una descarga o de una compilación.
 
 <a id="td-027"></a>

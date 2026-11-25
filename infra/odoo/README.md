@@ -10,7 +10,7 @@ Configuración relevante:
 
 - `list_db = False`: sin gestor de bases de datos, ni por web ni por RPC.
 - `proxy_mode = True`: respeta las cabeceras de Caddy.
-- `workers = 0`: un solo proceso multihilo, dentro de 1024 MiB.
+- `workers = 0`: un solo proceso multihilo, dentro de 768 MiB.
 - El usuario de PostgreSQL de Odoo es propietario de su base, sin superusuario.
 
 Los tres ficheros van dentro de la imagen (`Dockerfile`): tras editarlos, `docker compose --profile source up -d --build`.
