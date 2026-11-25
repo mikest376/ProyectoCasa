@@ -79,7 +79,12 @@ Por defecto, WSL usa el 50 % de la RAM. En Windows, crea o edita `C:\Users\<usua
 memory=22GB
 processors=10
 swap=4GB
+
+[experimental]
+autoMemoryReclaim=gradual
 ```
+
+`autoMemoryReclaim=gradual` devuelve a Windows la caché de disco de Linux poco a poco ([documentación](https://learn.microsoft.com/en-us/windows/wsl/wsl-config); por defecto, `dropCache`). Sin ello, las compilaciones llenan la memoria y Windows amplía su fichero de paginación en `C:` ([TD-026](TECHNICAL_DEBT.md#td-026)).
 
 Afecta a todas las distribuciones, incluida la de Docker Desktop. **Deshacer:** borra o renombra el fichero.
 

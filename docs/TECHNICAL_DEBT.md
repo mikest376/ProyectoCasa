@@ -42,18 +42,18 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-013](#td-013) | Unity Catalog en modo desarrollo | Media | Abierta | Fases 3 y 6 |
 | [TD-014](#td-014) | Credenciales raíz compartidas y tráfico interno sin TLS | Media | Mitigada | Fase 6 |
 | [TD-015](#td-015) | Sin observabilidad ni alertas de infraestructura | Media | Abierta | Fase 6 |
-| [TD-016](#td-016) | Sin integración continua | Media | Mitigada | Fase 3 |
+| [TD-016](#td-016) | Sin integración continua | Media | Pagada | 2026-11-25 |
 | [TD-017](#td-017) | Sin copias de seguridad | Media | Abierta | Fase 6 |
 | [TD-018](#td-018) | Text-to-SQL sin conjunto de evaluación | Media | Abierta | Fase 4 |
 | [TD-019](#td-019) | Tremor con poco mantenimiento | Media | Pendiente de decisión | Fase 5 |
 | [TD-020](#td-020) | Servicios sin probar en ejecución | Media | Abierta | Fases 3 y 4 |
 | [TD-021](#td-021) | NVIDIA NIM envía datos a un tercero | Alta | Abierta | Fase 4 |
-| [TD-022](#td-022) | Exposición temporal a Internet para la defensa del TFG | Alta | Abierta | Tras la defensa |
+| [TD-022](#td-022) | Exposición a Internet de la demo del TFG | Alta | Aceptada | Después del MVP |
 | [TD-023](#td-023) | Langfuse 2 sin parches de seguridad | Media | Abierta | Fase 6 |
 | [TD-024](#td-024) | Imágenes fijadas por tag, no por digest | Baja | Abierta | Fase 6 |
 | [TD-025](#td-025) | El disco del proyecto y de Docker anuncia un fallo | Crítica | Pagada | 2026-11-25 |
-| [TD-026](#td-026) | La memoria de WSL puede llenar la unidad del sistema | Media | Abierta | Fase 3 |
-| [TD-027](#td-027) | PostgreSQL no arranca solo al reiniciar Docker Desktop | Baja | Abierta | Fase 6 |
+| [TD-026](#td-026) | La memoria de WSL puede llenar la unidad del sistema | Media | Mitigada | Fase 6 |
+| [TD-027](#td-027) | PostgreSQL no arranca solo al reiniciar Docker Desktop | Baja | Pagada | 2026-11-25 |
 
 ## Detalle
 
@@ -145,9 +145,9 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** En el MVP, FastAPI, Trino, Unity Catalog, Kafka Connect y Ollama no exigen identidad.
 - **Riesgo.** Quien acceda al host puede leer los datos, y no hay trazabilidad por usuario.
 - **Mitigación actual.** Todos los puertos se publican solo en `127.0.0.1` y las redes están segmentadas: Odoo, el frontend y Caddy no alcanzan los servicios sin autenticación del plano de datos (comprobado). CORS está restringido al frontend.
-- **Excepción aprobada.** La exposición temporal para la defensa del TFG, solo a través de Caddy, con contraseña y con los controles de [TD-022](#td-022).
+- **Excepción aprobada.** La demo del TFG, publicada de forma permanente por decisión del usuario, solo a través de Caddy, con contraseña, con datos de demostración y con los controles de [TD-022](#td-022).
 - **Plan de pago.** En la Fase 6, JWT con OIDC en FastAPI, roles por dominio y propagación del usuario a Trino.
-- **Disparador.** **Bloquea cualquier otra exposición fuera del host**, y cualquier exposición permanente.
+- **Disparador.** **Bloquea cualquier otra exposición fuera del host**, y el uso de datos reales en la demo.
 
 <a id="td-010"></a>
 ### TD-010 · Kafka con un solo broker y sin réplicas
@@ -174,7 +174,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Sin parches de seguridad. La severidad sube a Alta porque Odoo se expondrá durante la defensa.
 - **Mitigación actual.** Datos de demostración, imagen fijada, rol de base de datos sin superusuario, accesos por defecto cerrados y Caddy delante con contraseña y rutas bloqueadas.
 - **Plan de pago.** Migrar a una versión con soporte tras el MVP. Silver absorbe los cambios de esquema.
-- **Disparador.** Vulnerabilidad crítica, uso con datos reales o exposición más allá de la defensa.
+- **Disparador.** Vulnerabilidad crítica o uso con datos reales. La exposición más allá de la defensa está asumida por el usuario ([TD-022](#td-022)).
 
 <a id="td-013"></a>
 ### TD-013 · Unity Catalog en modo desarrollo
@@ -210,8 +210,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Un cambio que no pasa las pruebas, o un secreto, llega a `main`.
 - **Mitigación actual.** `.github/workflows/ci.yml` se ejecuta en cada push y pull request a `main`, con permisos de solo lectura y acciones fijadas por commit. Ejecuta `scripts/validate.sh` (incluye gitleaks sobre los ficheros y todo el historial, y las pruebas de TD-005 y TD-022) y `scripts/test_integration.sh`. Los controles negativos, comprobados el 2026-11-25: 8 mutaciones de Caddy, CDC y roles, y un secreto inventado, hacen fallar la validación.
 - **Primera ejecución** (2026-11-25, commit `67bb45a`). En verde: validación y secretos, 91 s; Kafka, MinIO y worker, 65 s.
-- **Plan de pago.** Un push directo a `main` se comprueba después de llegar, no antes. Para pagarla, activar la protección de la rama y exigir los dos trabajos: es un ajuste del repositorio que hace una persona.
-- **Disparador.** Una ejecución en rojo en `main` sin corregir.
+- **Pago.** Pagada el 2026-11-25 (commits `67bb45a` y `4741296`). El usuario activó la protección de `main` y se ha comprobado con la API de GitHub: pull request obligatorio, los dos trabajos exigidos con la rama al día y sin `push --force`. La protección no se aplica a los administradores: una cuenta propietaria todavía puede saltársela.
 <a id="td-017"></a>
 ### TD-017 · Sin copias de seguridad
 
@@ -259,7 +258,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Disparador.** **Bloquea el uso de NIM con datos reales.** También un cambio de términos o la retirada del modelo.
 
 <a id="td-022"></a>
-### TD-022 · Exposición temporal a Internet para la defensa del TFG
+### TD-022 · Exposición a Internet de la demo del TFG
 
 - **Contexto.** Excepción aprobada a [TD-009](#td-009): durante la presentación, Odoo y el frontend se publican a través de Caddy. Como solo hay un nombre público, el frontend usa el 443 y Odoo el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. El router redirige los tres puertos al equipo. La regla 11 de CLAUDE.md incluye el 8443 desde el 2026-11-25.
 - **Riesgo.** Equipo doméstico accesible desde Internet; una sola contraseña compartida, sin límite de intentos (la imagen oficial de Caddy no lo incluye); Odoo sin parches ([TD-012](#td-012)); Docker Desktop oculta la IP del cliente, así que Caddy no puede filtrar por IP; y los certificados públicos anuncian el dominio. Con un solo nombre, las cookies de Odoo también llegan al 443, porque no distinguen puertos.
@@ -273,9 +272,12 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Comprobado en `127.0.0.1` con el certificado real** (2026-11-25). `check_exposure.py`, 0 fallos; con `CADDY_TLS=internal`, un fallo por sitio, como debe. Odoo redirige con `:8443`, el WebSocket responde 101 y 17 variantes de rutas bloqueadas devuelven 404 con contraseña.
 - **Cookies de Odoo** (2026-11-25). Odoo no las marca con `Secure` y viajaban en claro al abrir `http://nombre`. Caddy lo añade a todas, sin duplicarlo. Lo prueban `scripts/tests/test_caddy.sh`, con el Caddyfile real y servicios simulados en una red interna, y `check_exposure.py`, con Odoo. La primera también cubre contraseña, rutas bloqueadas y cabeceras que no se reenvían, y se ejecuta en `validate.sh`.
 - **Exposición de más** (2026-11-25). Tras el ensayo, `.env` conservó la IP de la red local y Caddy quedó publicado de 09:43 a 13:42. Llegaron 67 peticiones: 44 respuestas 401, 23 redirecciones y ningún acceso. Caddy está retirado y `.env`, en modo local.
-- **Límites conocidos.** Los scripts prueban desde el propio equipo, no desde Internet. Mientras `.env` tenga la IP de la red local, cualquier arranque del perfil `caddy` vuelve a exponer: usa las variables solo en la orden, como en el paso 6 del procedimiento.
-- **Plan de pago.** Antes de la defensa: repetir `check_exposure.py` con Caddy en la IP de la red local y probar desde fuera los puertos 443 y 8443. Retirar la exposición al terminar, según el [procedimiento](../README.md#exposición-para-la-defensa-del-tfg). Si se quisiera mantener, antes hay que pagar TD-009 y TD-012, o usar un túnel con identidad.
-- **Disparador.** Fin de la defensa, o cualquier acceso inesperado en los logs: corte inmediato.
+- **Decisión del usuario** (2026-11-25). Mantener la demo publicada de forma permanente, solo con datos de demostración, y asumir sus riesgos: deja de ser una excepción temporal a [TD-009](#td-009) y [TD-012](#td-012). `.env` conserva la IP de la red local y `CADDY_RESTART=unless-stopped`; `.env.example` sigue en `127.0.0.1` y `no`. El Caddyfile va dentro de la imagen, para que arranque con Docker ([TD-027](#td-027)).
+- **Comprobado antes de publicar** (2026-11-25). Con el nombre y el certificado reales en `127.0.0.1`, `check_exposure.py` termina con **0 fallos**: certificado de Let's Encrypt válido hasta el 22 de febrero de 2027 en 443 y 8443, 401 sin credenciales, cookies con `Secure` y rutas de Odoo bloqueadas. El nombre público resuelve a la dirección del router.
+- **Pendiente de una persona.** Publicar Caddy en la IP de la red local y probarlo desde fuera: CLAUDE.md reserva ese paso a una persona y no lo ha hecho el agente.
+- **Límites conocidos.** Los scripts prueban desde el propio equipo, no desde Internet. Con la exposición permanente, la contraseña única sin límite de intentos y Odoo sin parches pesan más. Comprobar una contraseña cuesta CPU (bcrypt): muchas peticiones pueden frenar el equipo.
+- **Plan de pago.** Para dejar de asumirla: pagar TD-009 y TD-012, o poner delante un túnel con identidad. Mientras siga publicada: revisar los accesos (`docker compose logs caddy`), cambiar la contraseña con regularidad y no cargar datos reales.
+- **Disparador.** Cualquier acceso inesperado en los logs, o una vulnerabilidad crítica de Odoo 17: corte inmediato con `docker compose --profile caddy stop caddy`.
 
 <a id="td-023"></a>
 ### TD-023 · Langfuse 2 sin parches de seguridad
@@ -311,18 +313,21 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-026 · La memoria de WSL puede llenar la unidad del sistema
 
 - **Contexto.** Medido el 2026-11-25. WSL puede ocupar 22 GB de los 32 del equipo, y la caché de disco de Linux cuenta como memoria en uso para Windows: 12 GB tras compilar las imágenes, con los servicios usando 2,6. Con un navegador abierto, la memoria confirmada llegó a 44 GB y Windows amplió su fichero de paginación, que es automático, hasta dejar `C:` con 4,1 GB.
-- **Riesgo.** Si se llena `C:`, falla Windows. Afecta sobre todo a las compilaciones y, en la Fase 3, a Trino con 5 GB más.
-- **Mitigación actual.** `check_env.sh` avisa por debajo de 20 GB libres. Tras `wsl --shutdown`, `C:` recuperó 11,8 GB. `E:`, donde está Docker (21,6 GB), tiene 60,5 GB libres después de eliminar una copia sin uso de 18,2 GB: suficiente para Unity Catalog, Ollama y el modelo.
-- **Plan de pago.** Antes de la Fase 3, evaluar `autoMemoryReclaim` en `.wslconfig`, para que WSL devuelva la caché, y bajar los límites de memoria que las medidas muestran holgados.
+- **Riesgo.** Si se llena `C:`, falla Windows.
+- **Mitigación actual.**
+  - `autoMemoryReclaim=gradual` en `.wslconfig`: WSL devuelve la caché poco a poco ([SETUP_WSL](SETUP_WSL.md#3-wslconfig)).
+  - Límites ajustados a lo medido: de 19 840 a 15 104 MiB antes de la Fase 3. El mayor cambio es Trino, de 5120 a 3072 MiB.
+  - `check_env.sh` avisa por debajo de 20 GB libres. `wsl --shutdown` devuelve la memoria en el acto.
+- **Plan de pago.** Medir `C:` y la memoria confirmada con el conjunto completo en marcha y un día de uso.
 - **Disparador.** Menos de 10 GB libres en `C:` antes de una descarga o de una compilación.
+
 <a id="td-027"></a>
 ### TD-027 · PostgreSQL no arranca solo al reiniciar Docker Desktop
 
 - **Contexto.** Los ficheros montados en `odoo-db`, `odoo` y `caddy` pasan por Ubuntu. Al reiniciarse, Docker Desktop arranca los contenedores antes de que Ubuntu los publique: `odoo-db` termina con el código 127 (`not a directory`) y la política de reinicio no lo reintenta. Odoo se recupera solo cuando vuelve la base. Reproducido dos veces el 2026-11-25.
 - **Riesgo.** Odoo y el CDC quedan parados hasta que alguien lo nota. No se pierden datos: el conector y Bronze continúan donde estaban (comprobado).
-- **Mitigación actual.** `docker compose --profile source up -d --wait` lo resuelve en segundos. Está en el [README](../README.md#puesta-en-marcha).
-- **Plan de pago.** En la Fase 6, incluir esos ficheros en imágenes propias o en `configs` de Compose, y alertar de contenedores caídos ([TD-015](#td-015)).
-- **Disparador.** Uso desatendido, o cualquier reinicio antes de la defensa.
+- **Pago.** Pagada el 2026-11-25 (commit `4741296`). `odoo-db`, `odoo` y `caddy` llevan su configuración dentro de imágenes propias. Comprobado: tras reiniciar Docker Desktop, los diez servicios vuelven a estar sanos en 72 s sin intervenir. El coste es que un cambio en `infra/` exige repetir el `up` con `--build`.
+
 ## Plantilla
 
 ```markdown

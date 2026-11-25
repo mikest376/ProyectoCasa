@@ -136,16 +136,16 @@ bash scripts/check_env.sh --gpu
 
 | Capa | Servicios | Límite (MiB) |
 |---|---|---:|
-| Origen | PostgreSQL, Odoo | 2560 |
-| Streaming | Kafka, Debezium Connect | 2560 |
-| Lakehouse | MinIO, Unity Catalog | 1792 |
-| Consulta | Trino (heap de 4 GB) | 5120 |
+| Origen | PostgreSQL, Odoo | 1792 |
+| Streaming | Kafka, Debezium Connect | 2304 |
+| Lakehouse | MinIO, Unity Catalog | 1536 |
+| Consulta | Trino (heap de 2 GB) | 3072 |
 | IA | Ollama | 4096 |
-| Aplicación | Worker, FastAPI, Next.js | 2560 |
+| Aplicación | Worker, FastAPI, Next.js | 1152 |
 | Observabilidad | Langfuse y su base de datos | 1024 |
 | Entrada | Caddy | 128 |
-| **Total** | | **19840** |
-| **Reserva de WSL** | | **2688** |
+| **Total** | | **15104** |
+| **Reserva de WSL** | | **7424** |
 
 El desglose por contenedor y el presupuesto de VRAM están en [CLAUDE.md](CLAUDE.md#presupuesto-de-memoria).
 
@@ -208,7 +208,7 @@ bash scripts/validate.sh              # lint, tipos, pruebas, secretos y configu
 bash scripts/test_integration.sh      # permisos de MinIO y recorrido de Kafka a Bronze
 ```
 
-Si se reinicia Docker Desktop, PostgreSQL puede quedarse parado ([TD-027](docs/TECHNICAL_DEBT.md#td-027)): `docker compose --profile source up -d --wait`.
+Tras editar `infra/caddy`, `infra/odoo` o `infra/postgres`, repite el `up` con `--build`: su configuración va dentro de la imagen ([TD-027](docs/TECHNICAL_DEBT.md#td-027)).
 
 Tras instalar módulos de Odoo hay que repetir `python3 scripts/cdc.py register`: prepara las tablas nuevas y comprueba que no añaden columnas con secretos.
 
@@ -227,7 +227,7 @@ Los [términos de prueba de NVIDIA](https://assets.ngc.nvidia.com/products/api-c
 
 ## Exposición para la defensa del TFG
 
-Durante la presentación se pueden publicar Odoo y el frontend a través de Caddy, con los puertos 80, 443 y 8443 (TCP) del router redirigidos a este equipo (`192.168.1.24`). Con un solo nombre público, el frontend va en el 443 y Odoo en el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. **Es una excepción temporal** a la regla de no exponer nada sin autenticación propia ([TD-009](docs/TECHNICAL_DEBT.md#td-009), [TD-022](docs/TECHNICAL_DEBT.md#td-022)).
+Durante la presentación se pueden publicar Odoo y el frontend a través de Caddy, con los puertos 80, 443 y 8443 (TCP) del router redirigidos a este equipo (`192.168.1.24`). Con un solo nombre público, el frontend va en el 443 y Odoo en el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. **Es una excepción** a la regla de no exponer nada sin autenticación propia ([TD-009](docs/TECHNICAL_DEBT.md#td-009), [TD-022](docs/TECHNICAL_DEBT.md#td-022)): el usuario ha decidido mantener la demo publicada, solo con datos de demostración.
 
 ### Qué queda accesible
 
@@ -306,7 +306,7 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
 2. Elimina las redirecciones del router (80, 443 y 8443) y la regla del firewall: `Remove-NetFirewallRule -DisplayName 'TFG Caddy'`.
 3. Cambia las contraseñas usadas.
 
-Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda.
+Con `CADDY_RESTART=no`, el valor por defecto, Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda. Con `unless-stopped`, vuelve con Docker.
 
 ## Estructura del repositorio
 
