@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Validación estática completa. Usa contenedores oficiales: no instala nada en el equipo y
-# no arranca los servicios del proyecto.
+# Validación completa. Usa contenedores oficiales: no instala nada en el equipo, no usa .env y
+# no arranca los servicios del proyecto. Es lo que ejecuta la integración continua.
 #
 #   scripts/validate.sh            todo
 #   scripts/validate.sh --quick    sin construir las imágenes propias
@@ -9,7 +9,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 2
 
 SHELLCHECK_IMAGE=koalaman/shellcheck:v0.11.0
 HADOLINT_IMAGE=hadolint/hadolint:v2.15.1-alpine
-CADDY_IMAGE=caddy:2.11.9-alpine
+GITLEAKS_IMAGE=zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+export CADDY_IMAGE=caddy:2.11.9-alpine
 
 failures=0
 run() {
@@ -35,15 +36,27 @@ print(total)
 sys.exit(total > 20480)'
 }
 
+# Las credenciales raíz de MinIO no salen de minio y minio-init (TD-014).
+minio_root() {
+    docker compose --env-file .env.example --profile "*" config --format json | python3 -c '
+import json, sys
+services = json.load(sys.stdin)["services"]
+holders = {n for n, s in services.items() if {"MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD", "MC_HOST_lake"} & set(s.get("environment") or {})}
+print(holders)
+sys.exit(holders != {"minio", "minio-init"})'
+}
+
 python_scripts() {
     python3 - <<'EOF'
 import ast
 import json
 import pathlib
 
-for path in [*pathlib.Path("scripts").glob("*.py"), pathlib.Path("infra/odoo/harden.py")]:
+scripts = pathlib.Path("scripts")
+for path in [*scripts.glob("*.py"), *scripts.glob("tests/*.py"), pathlib.Path("infra/odoo/harden.py")]:
     ast.parse(path.read_text(encoding="utf-8"), str(path))
-json.loads(pathlib.Path("infra/debezium/odoo-postgres-cdc.json").read_text(encoding="utf-8"))
+for path in ["infra/debezium/odoo-postgres-cdc.json", *pathlib.Path("infra/minio/policies").glob("*.json")]:
+    json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
 EOF
 }
 
@@ -56,20 +69,49 @@ caddy_config() {
         caddy validate --config /repo/infra/caddy/Caddyfile --adapter caddyfile
 }
 
+gitleaks() {
+    docker run --rm --network none "$@"
+}
+
+# Todo el historial. Los hallazgos se muestran sin el secreto (--redact).
+secrets_history() {
+    gitleaks -v "$mount" \
+        -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo \
+        "$GITLEAKS_IMAGE" git /repo --redact --no-banner --verbose
+}
+
+# Lo que se podría subir ahora: versionado o nuevo, sin lo ignorado (.env no se copia).
+secrets_files() {
+    local copy status=0
+    copy=$(mktemp -d)
+    git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' file; do
+        [[ ! -f $file ]] || cp --parents -- "$file" "$copy"
+    done
+    chmod -R a+rX "$copy"
+    gitleaks -v "$copy:/files:ro" "$GITLEAKS_IMAGE" dir /files --redact --no-banner --verbose || status=$?
+    rm -rf "$copy"
+    return "$status"
+}
+
 run "compose: sintaxis" docker compose --env-file .env.example --profile "*" config --quiet
 run "compose: presupuesto de memoria" budget
+run "compose: credenciales raíz de MinIO" minio_root
 run "scripts: shellcheck" docker run --rm --network none -v "$mount" -w /repo "$SHELLCHECK_IMAGE" \
-    scripts/check_env.sh scripts/init_odoo.sh scripts/validate.sh infra/odoo/entrypoint.sh infra/odoo/init.sh
+    scripts/*.sh scripts/tests/*.sh infra/odoo/entrypoint.sh infra/odoo/init.sh infra/minio/init.sh
 run "scripts: python y JSON" python_scripts
 for service in medallion-worker backend frontend; do
     run "hadolint: $service" docker run --rm --network none -v "$mount" -w /repo "$HADOLINT_IMAGE" \
         hadolint "services/$service/Dockerfile"
 done
+run "secretos: ficheros" secrets_files
+run "secretos: historial" secrets_history
 run "caddy: formato" docker run --rm --network none -v "$mount" "$CADDY_IMAGE" \
     caddy fmt --diff /repo/infra/caddy/Caddyfile
 run "caddy: configuración" caddy_config
 run "caddy: un solo nombre público" caddy_config -e CADDY_TLS=admin@example.org \
     -e CADDY_APP_HOST=tfg.example.org -e CADDY_ODOO_HOST=tfg.example.org:8443
+run "caddy: contraseña, rutas bloqueadas y cookies (TD-022)" bash scripts/tests/test_caddy.sh
+run "cdc: identidad de réplica y secretos (TD-004, TD-005)" python3 scripts/tests/test_cdc.py
 
 if [[ ${1:-} != --quick ]]; then
     run "worker: lint, tipos y pruebas" docker build -q --target test services/medallion-worker

@@ -7,6 +7,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 docker compose --profile source stop odoo
 docker compose --profile source up -d --wait odoo-db
 docker compose --profile source --profile init run --rm -T odoo-init
+# Antes de que Odoo vuelva a escribir: una tabla nueva sin clave primaria quedaría bloqueada
+# por la publicación (TD-005).
+python3 scripts/cdc.py prepare
 docker compose --profile source up -d --wait odoo
 
 echo "Odoo inicializado. Siguiente paso: python3 scripts/cdc.py register"
