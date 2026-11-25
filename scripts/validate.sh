@@ -9,6 +9,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 2
 
 SHELLCHECK_IMAGE=koalaman/shellcheck:v0.11.0
 HADOLINT_IMAGE=hadolint/hadolint:v2.15.1-alpine
+ACTIONLINT_IMAGE=rhysd/actionlint:1.7.12
 GITLEAKS_IMAGE=zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
 export CADDY_IMAGE=caddy:2.11.9-alpine
 
@@ -99,6 +100,8 @@ run "compose: credenciales raíz de MinIO" minio_root
 run "scripts: shellcheck" docker run --rm --network none -v "$mount" -w /repo "$SHELLCHECK_IMAGE" \
     scripts/*.sh scripts/tests/*.sh infra/odoo/entrypoint.sh infra/odoo/init.sh infra/minio/init.sh
 run "scripts: python y JSON" python_scripts
+run "integración continua: actionlint" docker run --rm --network none -v "$mount" -w /repo \
+    "$ACTIONLINT_IMAGE" -no-color .github/workflows/ci.yml
 for service in medallion-worker backend frontend; do
     run "hadolint: $service" docker run --rm --network none -v "$mount" -w /repo "$HADOLINT_IMAGE" \
         hadolint "services/$service/Dockerfile"

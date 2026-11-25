@@ -42,7 +42,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-013](#td-013) | Unity Catalog en modo desarrollo | Media | Abierta | Fases 3 y 6 |
 | [TD-014](#td-014) | Credenciales raíz compartidas y tráfico interno sin TLS | Media | Mitigada | Fase 6 |
 | [TD-015](#td-015) | Sin observabilidad ni alertas de infraestructura | Media | Abierta | Fase 6 |
-| [TD-016](#td-016) | Sin integración continua | Media | Abierta | Fase 2 |
+| [TD-016](#td-016) | Sin integración continua | Media | Mitigada | Fase 2 |
 | [TD-017](#td-017) | Sin copias de seguridad | Media | Abierta | Fase 6 |
 | [TD-018](#td-018) | Text-to-SQL sin conjunto de evaluación | Media | Abierta | Fase 4 |
 | [TD-019](#td-019) | Tremor con poco mantenimiento | Media | Pendiente de decisión | Fase 5 |
@@ -206,12 +206,11 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 <a id="td-016"></a>
 ### TD-016 · Sin integración continua
 
-- **Contexto.** El disparador («primer código en `services/`») se alcanzó en la Fase 1. Las pruebas automatizadas ya existen: 13 en el worker y 17 en el backend, con `ruff` y `mypy --strict`.
-- **Riesgo.** Nadie garantiza que se ejecuten antes de llegar a `main`.
-- **Mitigación actual.** `scripts/validate.sh` ejecuta en un paso compose, presupuesto, shellcheck, hadolint, Caddy, lint, tipos, pruebas y compilación.
-- **Plan de pago.** Primera tarea de la Fase 2: GitHub Actions con ese script y detección de secretos.
-- **Disparador.** Inicio de la Fase 2.
-
+- **Contexto.** El disparador («primer código en `services/`») se alcanzó en la Fase 1: había pruebas, pero nada garantizaba que se ejecutaran antes de llegar a `main`.
+- **Riesgo.** Un cambio que no pasa las pruebas, o un secreto, llega a `main`.
+- **Mitigación actual.** `.github/workflows/ci.yml` se ejecuta en cada push y pull request a `main`, con permisos de solo lectura y acciones fijadas por commit. Ejecuta `scripts/validate.sh` (incluye gitleaks sobre los ficheros y todo el historial, y las pruebas de TD-005 y TD-022) y `scripts/test_integration.sh`. Los controles negativos, comprobados el 2026-11-25: 8 mutaciones de Caddy, CDC y roles, y un secreto inventado, hacen fallar la validación.
+- **Plan de pago.** Comprobar la primera ejecución en GitHub. Activar la protección de la rama `main` para que el resultado sea obligatorio: es un ajuste del repositorio, no del código.
+- **Disparador.** Una ejecución en rojo en `main` sin corregir.
 <a id="td-017"></a>
 ### TD-017 · Sin copias de seguridad
 

@@ -223,6 +223,17 @@ Caddy publica Odoo y el frontend, con `/api` hacia FastAPI. El procedimiento est
 | Contenedor | Solo lectura, sin privilegios adicionales, sin API de administración y sin reinicio automático |
 | Verificación | `scripts/tests/test_caddy.sh` con servicios simulados, y `scripts/check_exposure.py` con los reales |
 
+## Integración continua
+
+`.github/workflows/ci.yml` se ejecuta en cada push y pull request a `main`, con los mismos scripts que en local ([TD-016](TECHNICAL_DEBT.md#td-016)):
+
+| Trabajo | Script | Comprueba |
+|---|---|---|
+| Validación y secretos | `scripts/validate.sh` | Compose, presupuesto, shellcheck, hadolint, actionlint, secretos (gitleaks, ficheros e historial), Caddy, CDC sobre PostgreSQL desechable, `ruff`, `mypy --strict`, `pytest` y compilación |
+| Kafka, MinIO y worker | `scripts/test_integration.sh` | Permisos de cada usuario de MinIO y recorrido de Kafka a Bronze con una caída simulada |
+
+El token del workflow solo lee, y las acciones están fijadas por commit.
+
 ## Particularidades de Odoo 17
 
 - **Campos traducibles:** se guardan como JSONB por idioma, por ejemplo `product_template.name`. Silver extrae el idioma configurado, con `en_US` como alternativa.

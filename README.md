@@ -314,6 +314,7 @@ Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda.
 ├── README.md
 ├── docker-compose.yml         Servicios, perfiles, redes y límites de memoria
 ├── .env.example               Plantilla de variables de entorno
+├── .github/workflows/         Integración continua
 ├── docs/
 │   ├── ARCHITECTURE.md        Diseño, diagramas, versiones y decisiones
 │   ├── SETUP_WSL.md           Preparación de WSL 2 y Docker
@@ -339,7 +340,7 @@ Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda.
 |---|---|---|---|
 | **0** | Base arquitectónica | Compose válido, presupuestos y deuda documentados | Completada |
 | **1** | Origen y CDC: Odoo, PostgreSQL, Kafka, Debezium | Un cambio en Odoo aparece en Kafka en menos de 5 s | Completada |
-| **2** | Bronze: worker, MinIO e integración continua | Todas las tablas en Delta; un reinicio no pierde eventos | En curso: falta la integración continua |
+| **2** | Bronze: worker, MinIO e integración continua | Todas las tablas en Delta; un reinicio no pierde eventos | Completada |
 | **3** | Silver, Gold, Unity Catalog y Trino | Los cinco dominios se consultan desde Trino | Pendiente |
 | **4** | Text-to-SQL: LLM, FastAPI y Langfuse | Conjunto de evaluación superado y SQL peligroso rechazado | Pendiente |
 | **5** | Dashboard conversacional: Next.js y Tremor | De la pregunta al gráfico, de extremo a extremo | Pendiente |

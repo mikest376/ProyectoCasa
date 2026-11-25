@@ -1,0 +1,43 @@
+# Integración continua (TD-016). Ejecuta los mismos scripts que se usan en local: si aquí
+# falla algo, `bash scripts/validate.sh` lo reproduce.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# El token del workflow solo lee: no publica ni escribe nada.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validación y secretos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # Acciones fijadas por commit: una etiqueta se puede mover.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # la detección de secretos revisa todo el historial
+          persist-credentials: false
+      - name: Compose, presupuesto, lint, tipos, pruebas, CDC, Caddy y secretos
+        run: bash scripts/validate.sh
+
+  integration:
+    name: Kafka, MinIO y worker
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Permisos de MinIO y recorrido hasta Bronze
+        run: bash scripts/test_integration.sh
