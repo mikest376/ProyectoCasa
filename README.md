@@ -2,7 +2,7 @@
 
 Plataforma analítica local que replica Odoo 17 casi en tiempo real en un lakehouse abierto y permite consultarlo en lenguaje natural. Funciona en un solo equipo con Docker Compose y un modelo de lenguaje local: por defecto, los datos del ERP no salen del host.
 
-> **Estado: Fase 1 completada, origen y CDC.** Odoo, PostgreSQL, Kafka, Debezium, MinIO, Langfuse y Caddy están configurados y probados en ejecución: un cambio en Odoo llega a Kafka en torno a un segundo. El worker, la API y el frontend son esqueletos funcionales. El detalle de lo que falta por probar está en [TD-020](docs/TECHNICAL_DEBT.md#td-020).
+> **Estado: Fase 2, Bronze.** Un cambio en Odoo llega a Kafka en torno a un segundo y a Delta Lake en el lote siguiente (30 s). Las 198 tablas con datos están en Bronze, sin pérdidas tras caídas forzadas del worker, de MinIO y de Docker. La API y el frontend son esqueletos funcionales. El detalle de lo que falta por probar está en [TD-020](docs/TECHNICAL_DEBT.md#td-020).
 
 - [Objetivos](#objetivos)
 - [Arquitectura](#arquitectura)
@@ -169,10 +169,12 @@ python3 scripts/cdc.py register                            # comprueba secretos,
 python3 scripts/cdc.py status
 ```
 
-**Servicios propios y entrada:**
+**Lakehouse, servicios propios y entrada:**
 
 ```bash
-docker compose --profile apps up -d --build --wait
+docker compose --profile lakehouse up -d --wait minio
+docker compose --profile lakehouse up minio-init           # buckets y un usuario por servicio
+docker compose --profile apps up -d --build --wait         # el worker empieza a escribir Bronze
 docker compose --profile caddy up -d                       # solo en 127.0.0.1
 ```
 
@@ -182,8 +184,8 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 |---|---|---|
 | `source` | PostgreSQL, Odoo | Probado |
 | `streaming` | Kafka, Debezium Connect | Probado |
-| `lakehouse` | MinIO, Unity Catalog | MinIO probado; Unity Catalog en la Fase 3 |
-| `apps` | Worker, FastAPI, Next.js | Esqueletos probados |
+| `lakehouse` | MinIO, Unity Catalog | MinIO probado, con un usuario por servicio; Unity Catalog en la Fase 3 |
+| `apps` | Worker, FastAPI, Next.js | El worker escribe Bronze; FastAPI y Next.js son esqueletos |
 | `observability` | Langfuse 2 | Probado |
 | `caddy` | Caddy | Probado en `127.0.0.1`, con certificado público |
 | `query` | Trino | Catálogo probado; se activa en la Fase 3 |
@@ -200,8 +202,11 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 
 ```bash
 docker compose --profile "*" down     # parar todo, conservando los datos
-bash scripts/validate.sh              # lint, tipos, pruebas y configuración
+bash scripts/validate.sh              # lint, tipos, pruebas, secretos y configuración
+bash scripts/test_integration.sh      # permisos de MinIO y recorrido de Kafka a Bronze
 ```
+
+Si se reinicia Docker Desktop, PostgreSQL puede quedarse parado ([TD-027](docs/TECHNICAL_DEBT.md#td-027)): `docker compose --profile source up -d --wait`.
 
 Tras instalar módulos de Odoo hay que repetir `python3 scripts/cdc.py register`: prepara las tablas nuevas y comprueba que no añaden columnas con secretos.
 
@@ -316,6 +321,7 @@ Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda.
 ├── infra/
 │   ├── caddy/                 Entrada externa
 │   ├── debezium/              Conector CDC y columnas excluidas
+│   ├── minio/                 Buckets, usuarios y políticas
 │   ├── odoo/                  Arranque, inicialización y cierre de accesos
 │   ├── postgres/              Configuración, roles y preparación del CDC
 │   ├── trino/                 JVM, límites de consulta y catálogos
@@ -324,7 +330,7 @@ Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda.
 │   ├── medallion-worker/      Kafka → Delta Lake (Bronze, Silver, Gold)
 │   ├── backend/               FastAPI y proveedores de LLM
 │   └── frontend/              Next.js
-└── scripts/                   Diagnóstico, inicialización, CDC y validación
+└── scripts/                   Diagnóstico, inicialización, CDC, validación y pruebas
 ```
 
 ## Hoja de ruta
@@ -333,7 +339,7 @@ Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda.
 |---|---|---|---|
 | **0** | Base arquitectónica | Compose válido, presupuestos y deuda documentados | Completada |
 | **1** | Origen y CDC: Odoo, PostgreSQL, Kafka, Debezium | Un cambio en Odoo aparece en Kafka en menos de 5 s | Completada |
-| **2** | Bronze: worker, MinIO e integración continua | Todas las tablas en Delta; un reinicio no pierde eventos | Pendiente |
+| **2** | Bronze: worker, MinIO e integración continua | Todas las tablas en Delta; un reinicio no pierde eventos | En curso: falta la integración continua |
 | **3** | Silver, Gold, Unity Catalog y Trino | Los cinco dominios se consultan desde Trino | Pendiente |
 | **4** | Text-to-SQL: LLM, FastAPI y Langfuse | Conjunto de evaluación superado y SQL peligroso rechazado | Pendiente |
 | **5** | Dashboard conversacional: Next.js y Tremor | De la pregunta al gráfico, de extremo a extremo | Pendiente |

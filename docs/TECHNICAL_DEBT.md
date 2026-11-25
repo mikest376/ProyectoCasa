@@ -4,7 +4,7 @@ Deuda asumida de forma consciente para el MVP. Lo que no está aquí no es deuda
 
 El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../CLAUDE.md#flujo-obligatorio-de-deuda-técnica). La plantilla está al final de este documento.
 
-**Última revisión:** 2026-11-25 (Fase 1, ensayo de exposición)
+**Última revisión:** 2026-11-25 (Fase 2, Bronze)
 
 ## Criterios
 
@@ -31,7 +31,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-002](#td-002) | Trino no lee Unity Catalog OSS para tablas Delta | Media | Mitigada | Fase 3 |
 | [TD-003](#td-003) | MinIO Community archivado, con imagen de un tercero | Media | Aceptada | Después del MVP |
 | [TD-004](#td-004) | La captura global copia datos sensibles a Kafka y Bronze | Alta | Mitigada | Fase 6 |
-| [TD-005](#td-005) | La captura global puede bloquear escrituras en Odoo | Media | Mitigada | Fase 2 |
+| [TD-005](#td-005) | La captura global puede bloquear escrituras en Odoo | Media | Mitigada | Fase 6 |
 | [TD-006](#td-006) | Retención de WAL ligada al slot de replicación | Media | Mitigada | Fase 6 |
 | [TD-007](#td-007) | Bronze sin particionamiento avanzado ni mantenimiento | Media | Abierta | Fase 3 |
 | [TD-008](#td-008) | Trino en un solo nodo | Media | Aceptada | Después del MVP |
@@ -40,7 +40,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-011](#td-011) | Eventos JSON sin registro de esquemas | Media | Abierta | Fase 6 |
 | [TD-012](#td-012) | Odoo 17 fuera de soporte estándar | Alta | Abierta | Después del MVP |
 | [TD-013](#td-013) | Unity Catalog en modo desarrollo | Media | Abierta | Fases 3 y 6 |
-| [TD-014](#td-014) | Credenciales raíz compartidas y tráfico interno sin TLS | Media | Abierta | Fases 2 y 6 |
+| [TD-014](#td-014) | Credenciales raíz compartidas y tráfico interno sin TLS | Media | Mitigada | Fase 6 |
 | [TD-015](#td-015) | Sin observabilidad ni alertas de infraestructura | Media | Abierta | Fase 6 |
 | [TD-016](#td-016) | Sin integración continua | Media | Abierta | Fase 2 |
 | [TD-017](#td-017) | Sin copias de seguridad | Media | Abierta | Fase 6 |
@@ -51,7 +51,9 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-022](#td-022) | Exposición temporal a Internet para la defensa del TFG | Alta | Abierta | Tras la defensa |
 | [TD-023](#td-023) | Langfuse 2 sin parches de seguridad | Media | Abierta | Fase 6 |
 | [TD-024](#td-024) | Imágenes fijadas por tag, no por digest | Baja | Abierta | Fase 6 |
-| [TD-025](#td-025) | El disco del proyecto y de Docker anuncia un fallo | Crítica | Pendiente de decisión | Antes de continuar |
+| [TD-025](#td-025) | El disco del proyecto y de Docker anuncia un fallo | Crítica | Pagada | 2026-11-25 |
+| [TD-026](#td-026) | El equipo va justo de disco y de memoria | Media | Abierta | Fase 3 |
+| [TD-027](#td-027) | PostgreSQL no arranca solo al reiniciar Docker Desktop | Baja | Abierta | Fase 6 |
 
 ## Detalle
 
@@ -84,7 +86,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** El nivel gratuito de Chainguard solo ofrece `latest`: puede retirar la imagen o eliminar el digest fijado.
 - **Decisión.** **Aceptada para el MVP:** la [imagen pública de Chainguard](https://www.chainguard.dev/fr-FR/unchained/secure-and-free-minio-chainguard-containers), fijada por digest.
 - **Mitigación actual.** Probada en ejecución el 2026-11-24: arranque, creación de buckets y, con delta-rs 1.7, append, MERGE y dos escritores concurrentes sin pérdida de filas (`aws_conditional_put=etag`). Los servicios usan solo la API S3.
-- **Plan de pago.** En la Fase 2, guardar una copia local de la imagen con `docker save`. Después del MVP, evaluar SeaweedFS, Garage y RustFS. Trino solo prueba su compatibilidad con AWS S3 y MinIO.
+- **Copia local.** `scripts/backup_minio_image.sh` guarda la imagen fijada (60 MiB comprimida, 236 MiB en disco) fuera del repositorio, con su SHA-256. Probado el 2026-11-25: rechaza una copia dañada y, con la imagen local eliminada, la restaura y MinIO arranca con `--pull never`. Está en el mismo SSD que Docker: protege de la retirada del digest, no de un fallo de disco ([TD-017](#td-017)).
+- **Plan de pago.** Después del MVP, evaluar SeaweedFS, Garage y RustFS. Trino solo prueba su compatibilidad con AWS S3 y MinIO.
 - **Disparador.** El digest deja de descargarse, o aparece una vulnerabilidad crítica sin parche.
 
 <a id="td-004"></a>
@@ -105,7 +108,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** PostgreSQL rechaza `UPDATE` y `DELETE` en tablas publicadas que no tienen clave primaria ni `REPLICA IDENTITY`. Además, cada tabla con datos genera un topic.
 - **Riesgo.** Errores de escritura en el ERP, y presión de memoria en Kafka y Connect.
 - **Mitigación actual.** `scripts/cdc.py prepare` asigna `REPLICA IDENTITY FULL` a las tablas que lo necesitan. Probado: con los módulos del MVP, las 481 tablas tienen clave primaria; en una tabla de prueba sin ella se reprodujo el error y el script lo resolvió. Con unos 200 topics, Kafka usa 673 MiB y Connect, hasta 951 MiB de sus 1280 (74 %), medido el 2026-11-24 tras el snapshot inicial.
-- **Plan de pago.** Las tablas nuevas sin clave primaria quedan expuestas hasta repetir `prepare`. En la Fase 2, ejecutarlo en la integración continua y al instalar módulos.
+- **Pruebas.** `scripts/tests/test_cdc.py` ejecuta `prepare` y `check` contra un PostgreSQL desechable con la configuración, los roles y el SQL reales: reproduce el bloqueo, comprueba que se resuelve y que una tabla posterior lo vuelve a necesitar. Forma parte de `validate.sh`. `scripts/init_odoo.sh` repite `prepare` tras instalar módulos, antes de que Odoo vuelva a escribir.
+- **Plan de pago.** Queda un caso: instalar un módulo con tablas sin clave primaria desde la interfaz de Odoo, sin pasar por el script. En la Fase 6, alertar de tablas publicadas sin identidad.
 - **Disparador.** Error `cannot update table ... because it does not have a replica identity`, o Connect por encima del 80 % de su límite.
 
 <a id="td-006"></a>
@@ -122,8 +126,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Cada tabla de origen se escribe en una tabla Delta sin particiones, en microlotes. No hay compactación ni `VACUUM` programados.
 - **Riesgo.** Muchos ficheros pequeños, lecturas lentas hacia Silver y crecimiento continuo del almacenamiento.
-- **Mitigación actual.** Lotes por tamaño y tiempo (`WORKER_BATCH_MAX_RECORDS`, `WORKER_BATCH_MAX_SECONDS`).
-- **Plan de pago.** En la Fase 3, compactar y limpiar a diario con delta-rs, y particionar por fecha de ingesta las tablas de mayor volumen.
+- **Mitigación actual.** Lotes por número, bytes y tiempo (`WORKER_BATCH_MAX_RECORDS`, `WORKER_BATCH_MAX_BYTES`, `WORKER_BATCH_MAX_SECONDS`), y un commit por tabla y lote. Tras la carga inicial: 198 tablas, 222 ficheros y 42 885 filas. En el peor caso, una tabla con cambios continuos suma 2880 ficheros al día.
+- **Plan de pago.** En la Fase 3, compactar y limpiar a diario con delta-rs, y particionar por fecha de ingesta las tablas de mayor volumen. El usuario de MinIO del worker no puede borrar en Bronze ([TD-014](#td-014)) y las tablas llevan `delta.enableExpiredLogCleanup=false`: la limpieza necesitará un permiso propio, y solo para eso.
 - **Disparador.** Más de 1000 ficheros o 5 GB en una tabla Bronze.
 
 <a id="td-008"></a>
@@ -149,9 +153,9 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-010 · Kafka con un solo broker y sin réplicas
 
 - **Contexto.** KRaft con broker y controlador en un mismo proceso y factor de réplica 1.
-- **Riesgo.** Si se pierde el volumen, se pierden los eventos no ingeridos y los offsets de Debezium.
+- **Riesgo.** Si se pierde el volumen, se pierden los eventos no ingeridos y los offsets de Debezium. Además, los offsets vuelven a empezar en 0: las coordenadas `(_topic, _partition, _offset)` de Bronze se repetirían con eventos distintos.
 - **Mitigación actual.** Volumen persistente y retención de 7 días. El origen permite repetir el snapshot.
-- **Plan de pago.** Tres brokers cuando haya hardware.
+- **Plan de pago.** Tres brokers cuando haya hardware. En la Fase 3, que la deduplicación de Silver incluya `source_lsn` y no solo las coordenadas de Kafka.
 - **Disparador.** Necesidad de alta disponibilidad.
 
 <a id="td-011"></a>
@@ -184,10 +188,10 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 <a id="td-014"></a>
 ### TD-014 · Credenciales raíz compartidas y tráfico interno sin TLS
 
-- **Contexto.** Worker y Trino usan las credenciales raíz de MinIO. Los servicios se comunican sin cifrar y los secretos están en `.env`.
-- **Riesgo.** Un servicio comprometido puede modificar cualquier capa.
-- **Mitigación actual.** Redes segmentadas y puertos locales. En PostgreSQL, Odoo y Debezium ya usan roles propios de mínimo privilegio. Variables S3 separadas de las de MinIO para poder cambiarlas sin tocar código.
-- **Plan de pago.** Usuarios de MinIO por servicio en la Fase 2 (worker con escritura, Trino con lectura). TLS y Docker Secrets en la Fase 6.
+- **Contexto.** Hasta la Fase 2, worker y Trino usaban las credenciales raíz de MinIO. Los servicios se comunican sin cifrar y los secretos están en `.env`.
+- **Riesgo.** Quien lea el tráfico de la red interna o `.env` obtiene las credenciales.
+- **Mitigación actual.** Redes segmentadas y puertos locales. En PostgreSQL, Odoo y Debezium usan roles de mínimo privilegio. En MinIO, `minio-init` crea un usuario por servicio ([infra/minio](../infra/minio/README.md)): el worker no puede borrar en Bronze, y Trino solo lee Silver y Gold. Las credenciales raíz solo las reciben `minio` y `minio-init`, y `validate.sh` lo comprueba. `scripts/test_integration.sh` verifica 32 permisos concedidos y denegados con usuarios reales.
+- **Plan de pago.** En la Fase 3, dos excepciones acotadas: que Trino escriba en `gold/_trino_metastore/` ([TD-002](#td-002)) y que alguien pueda borrar en Bronze al compactar ([TD-007](#td-007)). TLS y Docker Secrets en la Fase 6.
 - **Disparador.** Datos reales o acceso desde otro equipo.
 
 <a id="td-015"></a>
@@ -213,7 +217,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Todo el estado vive en volúmenes locales de Docker.
 - **Riesgo.** Pérdida total por fallo de disco o por `docker compose down -v`.
-- **Mitigación actual.** Los datos de demostración se regeneran y el código está en GitHub. `.env` no tiene copia, y el disco anuncia un fallo ([TD-025](#td-025)).
+- **Mitigación actual.** Los datos de demostración se regeneran y el código está en GitHub. Bronze se reconstruye desde Kafka durante 7 días, o con un snapshot nuevo. La imagen de MinIO tiene copia ([TD-003](#td-003)). `.env` solo existe en este equipo: conviene guardarlo en un gestor de contraseñas.
 - **Plan de pago.** Copias de PostgreSQL, MinIO, Unity Catalog y Langfuse, con prueba de restauración, en la Fase 6.
 - **Disparador.** Datos que no se puedan regenerar.
 
@@ -241,7 +245,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** Probados el 2026-11-24 en un proyecto aislado, con datos de demostración y sin exponer nada: PostgreSQL, Odoo, Kafka, Debezium, MinIO, Trino, Langfuse, worker, backend, frontend y Caddy. Un cambio en Odoo llegó a Kafka en 0,3 a 1,3 segundos, y ningún contenedor superó su límite de memoria.
 - **Riesgo.** Errores que solo aparecen en ejecución en lo que falta: Unity Catalog, Ollama, NVIDIA NIM (no hay clave para probarlo) y el conjunto completo con 22 GB de RAM.
 - **Mitigación actual.** Perfiles por capa: cada fase arranca solo lo que valida. El 2026-11-25, `check_env.sh --gpu` termina con 0 fallos (22019 MiB, usuario sin privilegios y GPU en contenedor) y Caddy sirve un certificado público válido ([TD-022](#td-022)).
-- **Plan de pago.** Unity Catalog y Trino con las tablas reales en la Fase 3, `ai` y NIM en la Fase 4. Antes de probar el conjunto completo, resolver [TD-025](#td-025): con el disco saturado, las medidas de rendimiento no son válidas.
+- **Fase 2 en ejecución** (2026-11-25, SSD). Tiempos de arranque hasta estar sanos: `source` 12 s, `streaming` 22 s, MinIO 6 s, `apps` 8 s, `observability` 13 s. Los 42 885 mensajes de los 198 topics están en Bronze, sin pérdidas ni repeticiones, tras un `kill -9` a mitad de la carga, 100 s con MinIO parado y un reinicio completo de Docker. Un cambio en Odoo se lee en Delta a los 35 s (lote de 30 s). El worker alcanzó 129 MiB de 1536. Ningún secreto de `.env` ni columna excluida en Bronze.
+- **Plan de pago.** Unity Catalog y Trino con las tablas reales en la Fase 3, `ai` y NIM en la Fase 4. Antes de probar el conjunto completo, resolver [TD-026](#td-026).
 - **Disparador.** Inicio de cada fase.
 
 <a id="td-021"></a>
@@ -266,8 +271,10 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
   - Caddy no reenvía `Cookie` al frontend ni a FastAPI, que no usan cookies: la sesión de Odoo no sale de Odoo.
 - **Ensayo** (2026-11-24). Let's Encrypt emitió el certificado (TLS-ALPN, 443). En 6 minutos llegaron 168 peticiones, muchas de rastreadores que buscaban `.env` o `.git/config`: 115 respuestas 401, 53 redirecciones y ningún acceso. El script fallaba con `TLSV1_ALERT_INTERNAL_ERROR` porque enviaba `nombre:8443` como SNI y por el 443: publicar el puerto no bastaba. La contraseña apareció en una captura y se rotó: la antigua devuelve 401 en los dos puertos.
 - **Comprobado en `127.0.0.1` con el certificado real** (2026-11-25). `check_exposure.py`, 0 fallos; con `CADDY_TLS=internal`, un fallo por sitio, como debe. Odoo redirige con `:8443`, el WebSocket responde 101 y 17 variantes de rutas bloqueadas devuelven 404 con contraseña.
-- **Límites conocidos.** El script prueba desde el propio equipo, no desde Internet. La cookie de sesión de Odoo no lleva `Secure`: si se abre `http://nombre`, viaja en claro antes de la redirección. Mientras `.env` tenga la IP de la red local, cualquier arranque del perfil `caddy` vuelve a exponer.
-- **Plan de pago.** Antes de la defensa: repetir el script con Caddy en la IP de la red local, probar desde fuera los puertos 443 y 8443, y añadir `Secure` a la cookie en Caddy. Retirar la exposición al terminar, según el [procedimiento](../README.md#exposición-para-la-defensa-del-tfg). Si se quisiera mantener, antes hay que pagar TD-009 y TD-012, o usar un túnel con identidad.
+- **Cookies de Odoo** (2026-11-25). Odoo no las marca con `Secure` y viajaban en claro al abrir `http://nombre`. Caddy lo añade a todas, sin duplicarlo. Lo prueban `scripts/tests/test_caddy.sh`, con el Caddyfile real y servicios simulados en una red interna, y `check_exposure.py`, con Odoo. La primera también cubre contraseña, rutas bloqueadas y cabeceras que no se reenvían, y se ejecuta en `validate.sh`.
+- **Exposición de más** (2026-11-25). Tras el ensayo, `.env` conservó la IP de la red local y Caddy quedó publicado de 09:43 a 13:42. Llegaron 67 peticiones: 44 respuestas 401, 23 redirecciones y ningún acceso. Caddy está retirado y `.env`, en modo local.
+- **Límites conocidos.** Los scripts prueban desde el propio equipo, no desde Internet. Mientras `.env` tenga la IP de la red local, cualquier arranque del perfil `caddy` vuelve a exponer: usa las variables solo en la orden, como en el paso 6 del procedimiento.
+- **Plan de pago.** Antes de la defensa: repetir `check_exposure.py` con Caddy en la IP de la red local y probar desde fuera los puertos 443 y 8443. Retirar la exposición al terminar, según el [procedimiento](../README.md#exposición-para-la-defensa-del-tfg). Si se quisiera mantener, antes hay que pagar TD-009 y TD-012, o usar un túnel con identidad.
 - **Disparador.** Fin de la defensa, o cualquier acceso inesperado en los logs: corte inmediato.
 
 <a id="td-023"></a>
@@ -293,10 +300,30 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** El repositorio, `.env` y los datos de Docker (18,2 GB) están en un disco duro mecánico con 48 050 horas de uso. El 2026-11-25, Windows lo marca como *Predictive Failure*. El registro de eventos contiene el aviso 52 («haga una copia de seguridad de sus datos de inmediato», 2026-11-11) y reinicios del controlador (129) el 2026-11-24. Los errores de lectura, 1716, se han corregido todos hasta ahora.
 - **Riesgo.** Pérdida de los volúmenes de Docker y de `.env` en cualquier momento. Además, el disco se satura: tras reiniciar, las tareas esperaron a la E/S el 78 % del tiempo (media de 5 minutos) y `docker info` tardó más de 4 minutos. Instalar los módulos de Odoo superó los 10 minutos.
-- **Mitigación actual.** Solo el código, en GitHub. Los datos de demostración se regeneran; `.env` no tiene copia ([TD-017](#td-017)).
-- **Plan de pago.** Decisión pendiente. Recomendación: copiar `.env` a un gestor de contraseñas, mover los datos de Docker al SSD (unidad `E:`, 51 GB libres) según [SETUP_WSL](SETUP_WSL.md#4-docker-desktop), clonar allí el repositorio y sustituir el disco. El proyecto completo necesita unos 40 GB: cabe, con poco margen.
-- **Disparador.** Ya alcanzado. **Bloquea** las descargas y pruebas de carga del siguiente bloque.
+- **Pago.** Pagada el 2026-11-25 (commit `882c1dd`). Nada del proyecto queda en ese disco:
+  - **Repositorio y `.env`**, en el SSD (`E:`), idénticos a los de `D:` y a GitHub antes de empezar. `.env` sigue ignorado.
+  - **Docker**, en el SSD. La copia de 18,2 GB tardó 54 minutos: entre las 14:09 y las 14:31, una zona del disco bajó a 0,5 MB/s, sin errores irrecuperables.
+  - **Ubuntu**, cuyo disco virtual también estaba en `D:` y por el que pasan los ficheros montados en los contenedores.
+  - Comprobado: contenedores recreados desde `E:`, volúmenes intactos (conector en marcha, slot al día, 198 topics), `check_env.sh --gpu` con 0 fallos, y `docker info` en 0,7 s frente a más de 4 minutos.
+- **Pendiente de una persona.** Sustituir el disco. Antes de desecharlo, borrarlo de forma segura: conserva una copia antigua del repositorio con `.env`.
 
+<a id="td-026"></a>
+### TD-026 · El equipo va justo de disco y de memoria
+
+- **Contexto.** Medido el 2026-11-25, con todo lo anterior a la Fase 3 descargado. `E:` tiene 9,4 GB libres, porque conserva una copia manual sin uso del disco de Docker (18,2 GB, en `docker-data\DockerDesktopWSL\disk`); sin ella serían unos 27 GB. Faltan por descargar Unity Catalog, Ollama y el modelo. Además, WSL puede ocupar 22 GB de los 32: con un navegador abierto, la memoria confirmada llegó a 44 GB y Windows amplió su fichero de paginación hasta dejar `C:` con 4,1 GB.
+- **Riesgo.** Si `E:` se llena, Docker se detiene y puede dañar sus volúmenes. Si se llena `C:`, falla Windows.
+- **Mitigación actual.** `check_env.sh` avisa por debajo de 20 GB. `docker image prune` y `docker builder prune` dejan espacio para reutilizar dentro del disco virtual, aunque no lo encogen. Tras `wsl --shutdown`, `C:` recuperó 11,8 GB.
+- **Plan de pago.** Antes de la Fase 3, eliminar la copia sin uso y medir de nuevo. Evaluar `autoMemoryReclaim` en `.wslconfig` para que WSL devuelva la caché de disco, y bajar los límites de memoria que las medidas muestran holgados.
+- **Disparador.** Menos de 10 GB libres en `C:` o en `E:` antes de una descarga. **Ya alcanzado en `E:`.**
+
+<a id="td-027"></a>
+### TD-027 · PostgreSQL no arranca solo al reiniciar Docker Desktop
+
+- **Contexto.** Los ficheros montados en `odoo-db`, `odoo` y `caddy` pasan por Ubuntu. Al reiniciarse, Docker Desktop arranca los contenedores antes de que Ubuntu los publique: `odoo-db` termina con el código 127 (`not a directory`) y la política de reinicio no lo reintenta. Odoo se recupera solo cuando vuelve la base. Reproducido dos veces el 2026-11-25.
+- **Riesgo.** Odoo y el CDC quedan parados hasta que alguien lo nota. No se pierden datos: el conector y Bronze continúan donde estaban (comprobado).
+- **Mitigación actual.** `docker compose --profile source up -d --wait` lo resuelve en segundos. Está en el [README](../README.md#puesta-en-marcha).
+- **Plan de pago.** En la Fase 6, incluir esos ficheros en imágenes propias o en `configs` de Compose, y alertar de contenedores caídos ([TD-015](#td-015)).
+- **Disparador.** Uso desatendido, o cualquier reinicio antes de la defensa.
 ## Plantilla
 
 ```markdown
@@ -320,3 +347,4 @@ Añade también la fila correspondiente en la tabla de resumen.
 | 2026-11-24 | Fase 1. Mitigadas: TD-001, TD-002 (opción A, probada), TD-004, TD-005 y TD-006. Aceptada: TD-003. TD-012 sube a Alta. TD-016 se reduce a integración continua. Nuevas: TD-021 a TD-024. |
 | 2026-11-24 | Puesta en marcha persistente. TD-005: consumo de Connect actualizado. |
 | 2026-11-25 | TD-022: esquema 443/8443 con un solo nombre, certificado validado por `check_exposure.py` y contraseña rotada. TD-020: 22 GB, GPU y certificado público comprobados. Nueva, Crítica: TD-025. |
+| 2026-11-25 | Fase 2, Bronze. Pagada: TD-025. Mitigada: TD-014 (usuarios de MinIO). TD-003 con copia restaurable. TD-005 con prueba automática. TD-022: `Secure` en las cookies y exposición de más, sin accesos. TD-010 y TD-020 actualizadas. Nuevas: TD-026 y TD-027. |

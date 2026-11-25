@@ -13,13 +13,13 @@ Lakehouse local sobre Odoo 17 que responde preguntas en lenguaje natural:
 - Preparación del equipo: [docs/SETUP_WSL.md](docs/SETUP_WSL.md)
 - Fases y criterios de salida: [README.md](README.md#hoja-de-ruta)
 
-**Fase actual: 1 (origen y CDC).** `services/*` contiene esqueletos. No adelantes trabajo de fases posteriores si no se pide.
+**Fase actual: 2 (Bronze).** El worker escribe Bronze; `backend` y `frontend` son esqueletos. No adelantes trabajo de fases posteriores si no se pide.
 
 ## Reglas de arquitectura
 
 1. **Stack cerrado.** Además del flujo anterior, están aprobados Caddy (entrada), Langfuse 2 (observabilidad del LLM) y NVIDIA NIM (LLM opcional). No se añade Spark, Flink, Zookeeper, Airflow, Hive Metastore ni otra base de datos sin aprobación explícita.
 2. **Flujo en un solo sentido.** Ninguna capa escribe en la anterior. Debezium usa un rol propio con `REPLICATION` y `SELECT`. Odoo usa un rol propietario de su base, nunca el superusuario.
-3. **Un único escritor Delta.** Solo `medallion-worker` escribe en MinIO. Trino, FastAPI y el frontend solo leen. La única excepción es el metastore de Trino (TD-002, opción A): ficheros en MinIO, con registro de tablas desde el worker.
+3. **Un único escritor Delta.** Solo `medallion-worker` escribe en MinIO. Trino, FastAPI y el frontend solo leen. La única excepción es el metastore de Trino (TD-002, opción A): ficheros en MinIO, con registro de tablas desde el worker. Cada servicio usa su propio usuario de MinIO con la política mínima (`infra/minio/policies`); las credenciales raíz solo las reciben `minio` y `minio-init`.
 4. **Bronze captura todas las tablas y no se modifica.** Todas las del esquema `public`, sin `table.include.list`, en modo append-only. El evento de Debezium se guarda crudo.
 5. **Los secretos no se capturan.** `infra/debezium/column-exclude.list` excluye contraseñas, claves, tokens y credenciales de correo. Ningún conector se registra sin que `scripts/cdc.py check` termine bien, y se repite tras instalar módulos de Odoo.
 6. **Silver y Gold solo contienen los dominios core:**
@@ -151,7 +151,8 @@ Es deuda técnica cualquier atajo, límite conocido, versión sin soporte, contr
 
 ## Antes de dar una tarea por terminada
 
-- [ ] `scripts/validate.sh` termina sin fallos (compose, presupuesto, lint, tipos, pruebas, Caddy).
+- [ ] `scripts/validate.sh` termina sin fallos (compose, presupuesto, lint, tipos, pruebas, Caddy, CDC, secretos).
+- [ ] Si cambia el worker, MinIO o Kafka, `scripts/test_integration.sh` termina sin fallos.
 - [ ] Las tablas de presupuesto están al día.
 - [ ] Sin secretos, datos reales ni `TODO` sin `TD-NNN`.
 - [ ] README, arquitectura y deuda técnica reflejan el cambio.

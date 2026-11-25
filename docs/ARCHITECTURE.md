@@ -103,17 +103,29 @@ flowchart LR
 | Contenido | Evento crudo | Estado actual tipado | Modelo dimensional |
 | Acceso de Text-to-SQL | No | No | Sí, solo lectura |
 
-**Columnas de Bronze:** `_topic`, `_partition`, `_offset`, `_ingested_at`, `op`, `source_lsn`, `source_ts_ms`, `key`, `before` y `after`. Las tres últimas guardan JSON como texto.
+**Columnas de Bronze:** `_topic`, `_partition`, `_offset`, `_ingested_at`, `op`, `source_lsn`, `source_ts_ms`, `key`, `before` y `after`. Las tres últimas guardan JSON como texto. Los mensajes que no se pueden interpretar se guardan tal cual en `s3://bronze/odoo/_rejected`, con el motivo.
 
 **Reglas de procesamiento**
 
-- **Entrega al menos una vez.** El offset de Kafka se confirma después del commit en Delta. Los duplicados se eliminan en Silver por `(_topic, _partition, _offset)`.
+- **Entrega al menos una vez.** El offset de Kafka se confirma, topic a topic y de forma explícita, después de su commit en Delta. Los duplicados se eliminan en Silver por `(_topic, _partition, _offset)`.
+- **Append-only.** Las tablas Bronze llevan `delta.appendOnly=true`: el protocolo rechaza `UPDATE` y `DELETE`. Además, el usuario de MinIO del worker no puede borrar en ese bucket.
+- **Memoria.** Un lote se cierra por número de eventos, por bytes o por tiempo, lo que ocurra antes.
 - **Orden.** El estado más reciente de una fila es el de mayor `source_lsn`, no el último en llegar.
 - **Borrados.** `op = 'd'` marca la fila con `_is_deleted`; no se elimina físicamente en Silver.
 - **Valores TOAST.** Debezium envía `__debezium_unavailable_value` cuando un campo largo no ha cambiado. El MERGE conserva el valor anterior y nunca escribe ese marcador.
 - **Concurrencia.** Un solo escritor. En MinIO, delta-rs usa escritura condicional (`aws_conditional_put=etag`), probada con la imagen fijada.
 
-En la Fase 1, el worker interpreta los eventos y resume los lotes, sin escribir ni confirmar offsets.
+Desde la Fase 2, el worker escribe Bronze. Silver y Gold llegan en la Fase 3.
+
+### Acceso a MinIO
+
+`minio-init` crea los buckets y un usuario por servicio con su política mínima ([infra/minio](../infra/minio/README.md), [TD-014](TECHNICAL_DEBT.md#td-014)):
+
+| Usuario | Bronze | Silver y Gold |
+|---|---|---|
+| Raíz (solo `minio` y `minio-init`) | Todo | Todo |
+| Worker | Leer y añadir, sin borrar | Leer, escribir y borrar |
+| Trino | Nada | Leer |
 
 ## Catálogo y consulta
 
@@ -207,8 +219,9 @@ Caddy publica Odoo y el frontend, con `/api` hacia FastAPI. El procedimiento est
 | Rutas de Odoo bloqueadas | Gestor de bases de datos, `/xmlrpc`, `/jsonrpc`, registro, recuperación de contraseña y pruebas |
 | Tamaño de petición | 64 KB en la aplicación, 25 MB en Odoo |
 | Credenciales | La cabecera `Authorization` no llega a Odoo ni a FastAPI, y se oculta en los logs. Las cookies no llegan al frontend ni a FastAPI |
+| Cookies de Odoo | Caddy añade `Secure`: el navegador no las envía en claro al abrir `http://nombre` |
 | Contenedor | Solo lectura, sin privilegios adicionales, sin API de administración y sin reinicio automático |
-| Verificación | `scripts/check_exposure.py` |
+| Verificación | `scripts/tests/test_caddy.sh` con servicios simulados, y `scripts/check_exposure.py` con los reales |
 
 ## Particularidades de Odoo 17
 
