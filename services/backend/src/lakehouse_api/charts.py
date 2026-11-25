@@ -69,7 +69,8 @@ def choose(
 
     if proposed in ("line", "area") and kinds[x] == "date":
         return ChartSpec(type="line" if proposed == "line" else "area", x_axis=x, y_axis=y)
-    if proposed == "table":
+    # Un listado con varias columnas se lee mejor en tabla; una etiqueta y un valor, dibujados.
+    if proposed == "table" and len(columns) > 2:
         return ChartSpec(type="table", x_axis=x, y_axis=y)
     if kinds[x] == "date" and proposed != "bar":
         return ChartSpec(type="line", x_axis=x, y_axis=y)

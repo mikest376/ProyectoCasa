@@ -380,7 +380,8 @@ MONTH, KEY = column("month", "date"), column("customer_id", "number")
         ("bar", "month", "total", [MONTH, TOTAL], 5, ("bar", "month", "total")),
         ("bar", None, "total", [TOTAL], 1, ("kpi", None, "total")),
         ("table", None, None, [NAME, TOTAL], 1, ("kpi", None, "total")),
-        ("table", "customer_name", "total", [NAME, TOTAL], 5, ("table", "customer_name", "total")),
+        ("table", "customer_name", "total", [NAME, TOTAL], 5, ("bar", "customer_name", "total")),
+        ("table", None, None, [NAME, MONTH, TOTAL], 5, ("table", "month", "total")),
         ("bar", "customer_name", "total", [NAME, TOTAL], 0, ("table", None, None)),
         ("bar", "customer_name", None, [NAME], 5, ("table", None, None)),
         # Un identificador no es una medida.

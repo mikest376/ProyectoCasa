@@ -13,7 +13,7 @@ Lakehouse local sobre Odoo 17 que responde preguntas en lenguaje natural:
 - Preparación del equipo: [docs/SETUP_WSL.md](docs/SETUP_WSL.md)
 - Fases y criterios de salida: [README.md](README.md#hoja-de-ruta)
 
-**Fase actual: 4 (Text-to-SQL).** El worker escribe las tres capas y el backend responde preguntas; `frontend` es un esqueleto. No adelantes trabajo de fases posteriores si no se pide.
+**Fase actual: 5 (dashboard conversacional).** El recorrido completo funciona: de Odoo a la respuesta en el navegador. No adelantes trabajo de fases posteriores si no se pide.
 
 ## Reglas de arquitectura
 
@@ -128,7 +128,7 @@ GPU: GTX 1060 con **6144 MiB** medidos con `nvidia-smi`. Es la única GPU y tamb
 
 **TypeScript** (`frontend`)
 - `strict: true`, sin `any`. App Router con Server Components por defecto.
-- Tailwind y Tremor para la interfaz (desde la Fase 5). El navegador solo habla con FastAPI.
+- Tailwind CSS 4 y componentes propios al estilo de Tremor Raw (TD-019), con Recharts para los gráficos. El navegador solo habla con FastAPI.
 
 **Docker**
 - Imagen fijada, límite de memoria, healthcheck, perfil, red explícita y puerto en `127.0.0.1`.

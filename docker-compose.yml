@@ -546,7 +546,7 @@ services:
       NIM_BASE_URL: ${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
       NIM_MODEL: ${NIM_MODEL:-nvidia/nemotron-3.5-lightning-30b-a3b}
       NIM_API_KEY: ${NIM_API_KEY:-}
-      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       SQL_MAX_ROWS: ${SQL_MAX_ROWS:-1000}
       SQL_TIMEOUT_SECONDS: ${SQL_TIMEOUT_SECONDS:-60}
       OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-4096}

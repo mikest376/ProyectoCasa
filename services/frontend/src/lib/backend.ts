@@ -1,32 +1,42 @@
 // Solo para componentes de servidor: usa la red interna de Docker.
-export type LlmInfo = {
-  provider: string;
-  model: string;
-  external: boolean;
-};
+import {
+  type ExampleGroup,
+  type LlmInfo,
+  parseExamples,
+  parseLlm,
+  parseTables,
+  type TableInfo,
+} from "./api.ts";
 
-function isLlmInfo(value: unknown): value is LlmInfo {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.provider === "string" &&
-    typeof candidate.model === "string" &&
-    typeof candidate.external === "boolean"
-  );
-}
-
-/** Consulta la API por la red interna. Devuelve null si no responde. */
-export async function loadLlmInfo(): Promise<LlmInfo | null> {
+async function get(path: string): Promise<unknown> {
   const base = process.env.BACKEND_INTERNAL_URL ?? "http://backend:8000";
   try {
-    const response = await fetch(`${base}/api/llm`, {
+    const response = await fetch(`${base}${path}`, {
       cache: "no-store",
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(4000),
     });
-    if (!response.ok) return null;
-    const data: unknown = await response.json();
-    return isLlmInfo(data) ? data : null;
+    return response.ok ? await response.json() : null;
   } catch {
     return null;
   }
+}
+
+export type Context = {
+  llm: LlmInfo | null;
+  examples: ExampleGroup[];
+  tables: TableInfo[];
+};
+
+/** Qué modelo responde, qué se puede preguntar y ejemplos. Vacío si la API no está. */
+export async function loadContext(): Promise<Context> {
+  const [llm, examples, tables] = await Promise.all([
+    get("/api/llm"),
+    get("/api/examples"),
+    get("/api/tables"),
+  ]);
+  return {
+    llm: parseLlm(llm),
+    examples: parseExamples(examples),
+    tables: parseTables(tables),
+  };
 }
