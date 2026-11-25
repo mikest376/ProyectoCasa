@@ -28,13 +28,45 @@ class BronzeEvent:
 
     @property
     def table(self) -> str:
-        return self.topic.rsplit(".", maxsplit=1)[-1]
+        return table_name(self.topic)
+
+    @property
+    def size(self) -> int:
+        """Tamaño aproximado del contenido, para acotar la memoria del lote."""
+        return len(self.key or "") + len(self.before or "") + len(self.after or "")
+
+
+@dataclass(frozen=True, slots=True)
+class RejectedEvent:
+    """Mensaje que no se puede interpretar. Se guarda tal cual: descartarlo sería perderlo."""
+
+    topic: str
+    partition: int
+    offset: int
+    reason: str
+    key: bytes | None
+    value: bytes | None
+
+    @property
+    def size(self) -> int:
+        return len(self.key or b"") + len(self.value or b"")
+
+
+def table_name(topic: str) -> str:
+    """Tabla de origen a partir del topic: odoo.public.sale_order -> sale_order."""
+    return topic.rsplit(".", maxsplit=1)[-1]
 
 
 def _as_text(value: Any) -> str | None:
     if value is None:
         return None
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    try:
+        text.encode()
+    except UnicodeEncodeError:
+        # Sustitutos sueltos (\ud800): no caben en UTF-8, pero sí como secuencia de escape.
+        return json.dumps(value, separators=(",", ":"))
+    return text
 
 
 def _as_int(value: Any) -> int | None:
@@ -50,13 +82,13 @@ def parse_event(
     try:
         envelope = json.loads(value)
         key_text = None if key is None else _as_text(json.loads(key))
-    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as error:
         raise InvalidEventError("JSON no válido") from error
     if not isinstance(envelope, dict):
         raise InvalidEventError("el evento no es un objeto JSON")
 
     op = envelope.get("op")
-    if op not in OPERATIONS:
+    if not isinstance(op, str) or op not in OPERATIONS:
         raise InvalidEventError("operación desconocida")
 
     source = envelope.get("source")

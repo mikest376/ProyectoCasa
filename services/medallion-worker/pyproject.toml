@@ -5,6 +5,8 @@ description = "Ingesta CDC de Kafka hacia Delta Lake (Bronze, Silver y Gold)"
 requires-python = ">=3.11"
 dependencies = [
     "confluent-kafka>=2.16,<3",
+    "deltalake>=1.7,<2",
+    "polars>=2.2,<3",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9,<3",
 ]
@@ -34,13 +36,15 @@ select = ["E", "F", "I", "B", "UP", "SIM", "T20", "S", "DTZ", "RUF"]
 ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "S105"]
 
 [tool.mypy]
 strict = true
 python_version = "3.11"
 files = ["src", "tests"]
 mypy_path = "src"
+# Sin él, mypy exige pasar a Settings() los campos que vienen del entorno.
+plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = ["confluent_kafka.*"]
@@ -48,3 +52,4 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["integration: necesita Kafka y MinIO (scripts/test_integration.sh)"]
