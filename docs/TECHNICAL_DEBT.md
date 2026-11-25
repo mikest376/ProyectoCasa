@@ -329,6 +329,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
   - **Tope de WSL: de 22 a 16 GB.** Es lo que de verdad protege `C:`. `autoMemoryReclaim=gradual` también está puesto ([SETUP_WSL](SETUP_WSL.md#3-wslconfig)), pero no basta: con los servicios en marcha la máquina nunca está ociosa y la caché no se devuelve (13 GB tras descargar imágenes).
   - Límites ajustados a lo medido: de 19 840 a 13 632 MiB con todo el conjunto, incluidos Ollama y los dos servicios nuevos. Con los 15 servicios en marcha, WSL usa 5,2 GB.
   - `check_env.sh` avisa por debajo de 20 GB libres. `wsl --shutdown` devuelve la memoria en el acto.
+- **En uso normal no pasa.** Medido sin compilar: `C:` tiene 21,2 GB libres sin WSL, 17,6 con los 15 servicios y 12,6 con el modelo cargado y respondiendo preguntas.
 - **Sigue pasando al compilar.** Tras construir todas las imágenes con los 15 servicios en marcha, la memoria confirmada llegó a 45 de 46 GB y `C:` bajó a 5,1 GB (disparador alcanzado). `wsl --shutdown` devolvió 15,6 GB; con todo arrancado de nuevo quedan 17,8 GB. Antes de una compilación grande, parar Docker y reiniciar WSL.
 - **Plan de pago.** Mover el fichero de paginación a `E:` o fijar su tamaño (cambio de Windows: lo decide el usuario). Medir `C:` con un día de uso.
 - **Disparador.** Menos de 10 GB libres en `C:` antes de una descarga o de una compilación.
