@@ -77,8 +77,12 @@
 	respond @bloqueado 404
 
 	# Conserva Host (con puerto), añade X-Forwarded-* y admite WebSocket sin más ajustes.
-	# TODO(TD-022): añadir Secure a la cookie de sesión de Odoo.
 	reverse_proxy odoo:8069 {
 		header_up -Authorization
+
+		# Odoo no marca sus cookies con Secure: el navegador las enviaría en claro al abrir
+		# http://nombre. Se quita si ya viene, para no repetirlo, y se añade a todas.
+		header_down Set-Cookie "(?i);\s*Secure\s*(;|$)" "$1"
+		header_down Set-Cookie "^(.+)$" "$1; Secure"
 	}
 }

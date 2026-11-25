@@ -109,8 +109,8 @@ def tls_connection(site: Site, verify: bool) -> ssl.SSLSocket:
         raise
 
 
-def https_status(site: Site, path: str, auth: str | None = None) -> int:
-    """Estado HTTP a través de Caddy, sin seguir redirecciones. El certificado se valida aparte."""
+def https_get(site: Site, path: str, auth: str | None = None) -> tuple[int, list[str]]:
+    """Estado y cookies a través de Caddy, sin seguir redirecciones. El certificado se valida aparte."""
     connection = http.client.HTTPSConnection(site.host, site.published, timeout=10)
     connection.sock = tls_connection(site, verify=False)
     try:
@@ -118,7 +118,8 @@ def https_status(site: Site, path: str, auth: str | None = None) -> int:
         if auth:
             headers["Authorization"] = f"Basic {auth}"
         connection.request("GET", path, headers=headers)
-        return connection.getresponse().status
+        response = connection.getresponse()
+        return response.status, response.headers.get_all("Set-Cookie") or []
     finally:
         connection.close()
 
@@ -126,11 +127,27 @@ def https_status(site: Site, path: str, auth: str | None = None) -> int:
 def expect(site: Site, path: str, status: int, text: str, auth: str | None = None) -> None:
     """Un fallo de conexión cuenta como fallo de esta comprobación, sin cortar las demás."""
     try:
-        received = https_status(site, path, auth)
+        received, _ = https_get(site, path, auth)
     except (OSError, http.client.HTTPException) as error:
         report(False, f"{text} (sin respuesta: {error})")
         return
     report(received == status, text if received == status else f"{text} (respondió {received})")
+
+
+def check_cookies(site: Site, auth: str) -> None:
+    """Sin Secure, el navegador envía la sesión en claro al abrir http://nombre."""
+    text = f"{site.authority}: cookies de Odoo con Secure y sesión con HttpOnly"
+    try:
+        _, cookies = https_get(site, "/web/login", auth)
+    except (OSError, http.client.HTTPException) as error:
+        report(False, f"{text} (sin respuesta: {error})")
+        return
+    attributes = {
+        cookie.partition("=")[0]: {part.strip().lower() for part in cookie.split(";")[1:]} for cookie in cookies
+    }
+    insecure = [name for name, found in attributes.items() if "secure" not in found]
+    good = not insecure and "httponly" in attributes.get("session_id", ())
+    report(good, text if good else f"{text} (recibidas: {sorted(attributes)}, sin Secure: {insecure})")
 
 
 def check_certificate(site: Site, tls_mode: str) -> None:
@@ -205,10 +222,11 @@ def check_caddy(ports: list[Port]) -> None:
 
     password = os.environ.get("CADDY_CHECK_PASSWORD")
     if not password:
-        print("  --     rutas bloqueadas: define CADDY_CHECK_PASSWORD para comprobarlas")
+        print("  --     rutas bloqueadas y cookies: define CADDY_CHECK_PASSWORD para comprobarlas")
     elif odoo:
         user = environment["CADDY_BASIC_AUTH_USER"]
         auth = base64.b64encode(f"{user}:{password}".encode()).decode()
+        check_cookies(odoo, auth)
         for path in BLOCKED:
             expect(odoo, path, 404, f"{odoo.authority}{path} bloqueada incluso con contraseña", auth)
 
