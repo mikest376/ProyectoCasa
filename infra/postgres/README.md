@@ -7,6 +7,8 @@
 | `sql/replica_identity.sql` | `REPLICA IDENTITY FULL` en tablas sin clave primaria ([TD-005](../../docs/TECHNICAL_DEBT.md#td-005)) |
 | `sql/publication.sql` | Publicación para todas las tablas del esquema `public` |
 
+`postgresql.conf` e `init/` van dentro de la imagen (`Dockerfile`): tras editarlos, `docker compose --profile source up -d --build`.
+
 Los scripts de `sql/` los aplica `scripts/cdc.py prepare`. Se pueden repetir, y hay que hacerlo tras instalar módulos de Odoo.
 
 Los de `init/` no se repiten si el volumen ya existe. Para aplicarlos de nuevo hay que borrar `odoo-db-data`, con pérdida de datos.

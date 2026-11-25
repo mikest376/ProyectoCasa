@@ -102,10 +102,8 @@ run "scripts: shellcheck" docker run --rm --network none -v "$mount" -w /repo "$
 run "scripts: python y JSON" python_scripts
 run "integración continua: actionlint" docker run --rm --network none -v "$mount" -w /repo \
     "$ACTIONLINT_IMAGE" -no-color .github/workflows/ci.yml
-for service in medallion-worker backend frontend; do
-    run "hadolint: $service" docker run --rm --network none -v "$mount" -w /repo "$HADOLINT_IMAGE" \
-        hadolint "services/$service/Dockerfile"
-done
+run "hadolint" docker run --rm --network none -v "$mount" -w /repo "$HADOLINT_IMAGE" \
+    hadolint services/*/Dockerfile infra/*/Dockerfile
 run "secretos: ficheros" secrets_files
 run "secretos: historial" secrets_history
 run "caddy: formato" docker run --rm --network none -v "$mount" "$CADDY_IMAGE" \

@@ -63,22 +63,22 @@ WSL dispone de 22528 MiB. Los límites son fijos en `docker-compose.yml` y no se
 
 | Servicio | Límite (MiB) | Ajuste interno | Perfil |
 |---|---:|---|---|
-| `odoo-db` | 1024 | `shared_buffers=256MB`, 60 conexiones | `source` |
-| `odoo` | 1536 | `workers=0` | `source` |
-| `kafka` | 1280 | heap 768 MiB | `streaming` |
+| `odoo-db` | 768 | `shared_buffers=256MB`, 60 conexiones | `source` |
+| `odoo` | 1024 | `workers=0` | `source` |
+| `kafka` | 1024 | heap 768 MiB | `streaming` |
 | `kafka-connect` | 1280 | heap 768 MiB | `streaming` |
-| `minio` | 1024 | sin ajuste | `lakehouse` |
+| `minio` | 768 | sin ajuste | `lakehouse` |
 | `unity-catalog` | 768 | heap 512 MiB | `lakehouse` |
-| `trino` | 5120 | heap 4096 MiB, 1500 MB por consulta | `query` |
+| `trino` | 3072 | heap 2048 MiB, 800 MB por consulta | `query` |
 | `ollama` | 4096 | capas que no caben en VRAM | `ai` |
-| `medallion-worker` | 1536 | `POLARS_MAX_THREADS=4` | `apps` |
-| `backend` | 512 | un proceso | `apps` |
-| `frontend` | 512 | `--max-old-space-size=384` | `apps` |
+| `medallion-worker` | 512 | `POLARS_MAX_THREADS=4` | `apps` |
+| `backend` | 384 | un proceso | `apps` |
+| `frontend` | 256 | `--max-old-space-size=160` | `apps` |
 | `langfuse` | 768 | `--max-old-space-size=512` | `observability` |
 | `langfuse-db` | 256 | sin ajuste | `observability` |
 | `caddy` | 128 | sin ajuste | `caddy` |
-| **Total** | **19840** | | |
-| **Reserva** (kernel, Docker, editor) | **2688** | | |
+| **Total** | **15104** | | |
+| **Reserva** (kernel, Docker, editor) | **7424** | | |
 
 Los servicios de un solo uso (`*-init`) no cuentan en el total. `odoo-init` se ejecuta con `odoo` detenido.
 

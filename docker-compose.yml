@@ -1,7 +1,7 @@
 # =============================================================================
 # Odoo Data Lakehouse
 #
-# PRESUPUESTO DE MEMORIA: 19840 MiB de límites sobre los 22528 MiB de WSL.
+# PRESUPUESTO DE MEMORIA: 15104 MiB de límites sobre los 22528 MiB de WSL.
 # Un cambio de límite obliga a actualizar la tabla de CLAUDE.md en el mismo commit.
 #
 # Nada arranca sin un perfil explícito:
@@ -20,6 +20,9 @@
 #
 # PUERTOS: todos en 127.0.0.1. Caddy es el único que puede escuchar fuera, y solo si
 # CADDY_BIND_IP se cambia de forma explícita (ver README, exposición para el TFG).
+#
+# IMÁGENES PROPIAS: odoo-db, odoo, caddy y trino llevan dentro su configuración, para que
+# arranquen solas con Docker (TD-027). Tras editar infra/, repite el up con --build.
 #
 # REDES: cada servicio ve solo lo que necesita.
 #   edge-odoo  Caddy y Odoo
@@ -45,18 +48,19 @@ x-s3-env: &s3-env
   S3_REGION: ${S3_REGION:-us-east-1}
 
 x-odoo: &odoo
-  image: odoo:17.0-20260908
+  image: odoo-lakehouse/odoo:dev
+  build:
+    context: ./infra/odoo
   entrypoint: ["bash", "/opt/lakehouse/entrypoint.sh"]
   depends_on:
     odoo-db:
       condition: service_healthy
   volumes:
     - odoo-data:/var/lib/odoo
-    - ./infra/odoo:/opt/lakehouse:ro
   deploy:
     resources:
       limits:
-        memory: 1536M
+        memory: 1024M
 
 x-odoo-env: &odoo-env
   TZ: ${TZ:-UTC}
@@ -73,7 +77,9 @@ services:
   # ---------------------------------------------------------------------------
   odoo-db:
     <<: *service
-    image: postgres:15.20-bookworm
+    image: odoo-lakehouse/odoo-db:dev
+    build:
+      context: ./infra/postgres
     profiles: ["source"]
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
     environment:
@@ -92,8 +98,6 @@ services:
       - "127.0.0.1:${ODOO_DB_PORT_HOST:-5433}:5432"
     volumes:
       - odoo-db-data:/var/lib/postgresql/data
-      - ./infra/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # Por TCP: durante la inicialización, PostgreSQL solo escucha en el socket local.
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$ODOO_DB_NAME\""]
@@ -104,7 +108,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1024M
+          memory: 768M
 
   odoo:
     <<: [*service, *odoo]
@@ -182,7 +186,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1280M
+          memory: 1024M
 
   kafka-connect:
     <<: *service
@@ -262,7 +266,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1024M
+          memory: 768M
 
   # Un solo uso: crea los buckets Medallion y un usuario por servicio, y termina.
   minio-init:
@@ -338,7 +342,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 5120M # heap 4 GiB (jvm.config) + memoria fuera de heap
+          memory: 3072M # heap 2 GiB (jvm.config) + memoria fuera de heap
 
   ollama:
     <<: *service
@@ -419,7 +423,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1536M
+          memory: 512M
 
   backend:
     <<: *service
@@ -466,7 +470,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 384M
 
   frontend:
     <<: *service
@@ -477,7 +481,7 @@ services:
     depends_on:
       - backend
     environment:
-      NODE_OPTIONS: --max-old-space-size=384
+      NODE_OPTIONS: --max-old-space-size=160
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:8000}
     networks: [edge-app]
     ports:
@@ -491,7 +495,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 256M
 
   # ---------------------------------------------------------------------------
   # 6 · Observabilidad del LLM: Langfuse 2 (sin parches de seguridad, ver TD-023)
@@ -567,10 +571,13 @@ services:
   # ---------------------------------------------------------------------------
   caddy:
     <<: *service
-    image: caddy:2.11.9-alpine
+    image: odoo-lakehouse/caddy:dev
+    build:
+      context: ./infra/caddy
     profiles: ["caddy"]
-    # Tras reiniciar el equipo, la exposición no se reanuda sola.
-    restart: "no"
+    # Por defecto, la exposición no se reanuda sola tras reiniciar. Solo cambia si .env lo pide
+    # (demo pública permanente, TD-022).
+    restart: "${CADDY_RESTART:-no}"
     environment:
       CADDY_TLS: ${CADDY_TLS:-internal}
       CADDY_APP_HOST: ${CADDY_APP_HOST:-app.localhost}
@@ -585,7 +592,6 @@ services:
       # Odoo, cuando comparte nombre con el frontend (CADDY_ODOO_HOST=nombre:8443).
       - "${CADDY_BIND_IP:-127.0.0.1}:${CADDY_ODOO_HTTPS_PORT:-8443}:8443"
     volumes:
-      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     read_only: true

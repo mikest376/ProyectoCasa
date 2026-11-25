@@ -184,7 +184,8 @@ def check_redirect(port: Port, host: str) -> None:
 
 def caddy_site(variable: str, value: str, published: dict[int, Port]) -> Site | None:
     """Interpreta "nombre" o "nombre:puerto", como en el Caddyfile."""
-    host, _, number = value.partition(":")
+    # Caddy normaliza los nombres a minúsculas; el SNI y las redirecciones también.
+    host, _, number = value.lower().partition(":")
     target = int(number or 443)
     port = published.get(target)
     if port is None:
