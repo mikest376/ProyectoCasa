@@ -213,7 +213,7 @@ El control de acceso de Trino limita lo que puede hacer el usuario `text2sql`, p
 2. Los tres ejemplos resueltos más parecidos a la pregunta, por similitud léxica.
 3. La pregunta, con la tabla más probable y sus columnas.
 
-La respuesta es JSON (`explanation`, `sql`, `chart_type`, `x_axis`, `y_axis`, `title`); Ollama restringe la generación a ese esquema. Si el SQL se rechaza o Trino devuelve un error de análisis, hay un segundo intento con el motivo. Los errores de ejecución no se reenvían: podrían contener datos.
+La respuesta es JSON (`explanation`, `sql`, `chart_type`, `x_axis`, `y_axis`, `title`); Ollama restringe la generación a ese esquema. Si el SQL se rechaza o Trino devuelve un error de análisis, hay un segundo intento con el motivo. De un error de ejecución solo se reenvía un texto fijo: el mensaje de Trino puede citar valores de filas.
 
 ### Proveedores de LLM
 
@@ -222,6 +222,8 @@ La respuesta es JSON (`explanation`, `sql`, `chart_type`, `x_axis`, `y_axis`, `t
 ### Trazas y evaluación
 
 Cada pregunta deja en Langfuse una traza con los intentos, los tokens, el SQL y los tiempos, sin filas de resultados. Se envía por la API HTTP de ingesta: el SDK de Python v2, el compatible con el servidor, ya no se mantiene.
+
+Cada pregunta es independiente: el modelo no recibe las anteriores ni sus resultados.
 
 `python -m lakehouse_api.evals` mide la precisión con 100 preguntas ([TD-018](TECHNICAL_DEBT.md#td-018)).
 

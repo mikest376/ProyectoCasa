@@ -23,6 +23,7 @@ Interfaz para preguntar a los datos en lenguaje natural.
 ## Reglas de la interfaz
 
 - Cada respuesta enseña siempre el **SQL ejecutado**, los tiempos y el modelo que ha respondido. Si el SQL se rechaza, enseña el propuesto e indica que no se ha ejecutado.
+- Cada pregunta es independiente. El historial es solo visual: no se envía al modelo.
 - Los decimales llegan como texto exacto y solo se convierten para dibujarlos.
 - Un gráfico, una medida y un color. Todo valor está también en la tabla.
 - Claro y oscuro con colores validados para cada uno. Sin fuentes ni scripts de terceros.

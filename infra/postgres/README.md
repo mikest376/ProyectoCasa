@@ -26,4 +26,4 @@ docker compose exec -T odoo-db psql -U postgres -d odoo -c "SELECT pg_drop_repli
 python3 scripts/cdc.py register
 ```
 
-Los topics reciben de nuevo todas las filas con `op = 'r'`. Silver conserva el estado de mayor `source_lsn`.
+Los topics reciben de nuevo todas las filas con `op = 'r'`. Silver conserva el estado de mayor `source_lsn`. Los borrados ocurridos sin slot no llegan: esas filas siguen activas en Silver ([TD-006](../../docs/TECHNICAL_DEBT.md#td-006)).

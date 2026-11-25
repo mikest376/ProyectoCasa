@@ -145,6 +145,7 @@ def _micros(value: Any) -> int:
 def _current_rows(
     lake: Lake, uri: str, contract: Contract, keys: Iterable[int]
 ) -> dict[int, dict[str, Any]]:
+    # TODO(TD-028): lee la tabla entera para quedarse con unas pocas claves.
     frame = lake.read(uri).filter(pl.col("id").is_in(list(keys)))
     rows: Sequence[dict[str, Any]] = frame.select(list(silver_schema(contract))).rows(named=True)
     return {row["id"]: dict(row) for row in rows}

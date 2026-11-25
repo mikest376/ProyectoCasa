@@ -1,6 +1,6 @@
 # medallion-worker
 
-Consume los eventos CDC de Kafka y escribe Delta Lake en MinIO. Es el único servicio que escribe en el lakehouse.
+Consume los eventos CDC de Kafka y escribe Delta Lake en MinIO. Es el único código que escribe en el lakehouse.
 
 | | |
 |---|---|

@@ -54,6 +54,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-025](#td-025) | El disco del proyecto y de Docker anuncia un fallo | Crítica | Pagada | 2026-11-25 |
 | [TD-026](#td-026) | La memoria de WSL puede llenar la unidad del sistema | Media | Mitigada | Fase 6 |
 | [TD-027](#td-027) | PostgreSQL no arranca solo al reiniciar Docker Desktop | Baja | Pagada | 2026-11-25 |
+| [TD-028](#td-028) | Silver y Gold se procesan enteros en memoria | Baja | Abierta | Después del MVP |
 
 ## Detalle
 
@@ -119,8 +120,9 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** Con el conector detenido, PostgreSQL conserva WAL para el slot. Se limita con `max_slot_wal_keep_size=4GB`.
 - **Riesgo.** Al superar el tope, el slot se invalida y hace falta un snapshot completo. Sin tope, el disco se llenaría.
 - **Mitigación actual.** Tope de 4 GB y `heartbeat.interval.ms=10000`. `scripts/cdc.py status` muestra el retraso del slot. Probado: los cambios hechos con Connect parado se recuperan al arrancarlo, y el [procedimiento de recuperación](../infra/postgres/README.md#recuperar-un-slot-invalidado) repite el snapshot.
-- **Plan de pago.** En la Fase 6, alertar sobre el retraso del slot.
-- **Disparador.** Retraso del slot superior a 2 GB.
+- **Límite.** Un snapshot nuevo trae las filas que existen, no los borrados que ocurrieron sin slot: esas filas siguen activas en Silver.
+- **Plan de pago.** En la Fase 6, alertar sobre el retraso del slot y comparar las claves de Silver con las del último snapshot.
+- **Disparador.** Retraso del slot superior a 2 GB, o un snapshot repetido.
 
 <a id="td-007"></a>
 ### TD-007 · Bronze sin particionamiento avanzado ni mantenimiento
@@ -195,7 +197,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 
 - **Contexto.** Hasta la Fase 2, worker y Trino usaban las credenciales raíz de MinIO. Los servicios se comunican sin cifrar y los secretos están en `.env`.
 - **Riesgo.** Quien lea el tráfico de la red interna o `.env` obtiene las credenciales.
-- **Mitigación actual.** Redes segmentadas y puertos locales. En PostgreSQL, Odoo y Debezium usan roles de mínimo privilegio. En MinIO, `minio-init` crea un usuario por servicio ([infra/minio](../infra/minio/README.md)): el worker no puede borrar en Bronze, y Trino solo lee Silver y Gold. Las credenciales raíz solo las reciben `minio` y `minio-init`, y `validate.sh` lo comprueba. `scripts/test_integration.sh` verifica 53 permisos concedidos y denegados con usuarios reales.
+- **Mitigación actual.** Redes segmentadas y puertos locales. En PostgreSQL, Odoo y Debezium usan roles de mínimo privilegio. En MinIO, `minio-init` crea un usuario por servicio ([infra/minio](../infra/minio/README.md)): el worker no puede borrar en Bronze, y Trino solo lee Silver y Gold. Las credenciales raíz solo las reciben `minio` y `minio-init`, y `validate.sh` lo comprueba. `scripts/test_integration.sh` verifica 52 permisos concedidos y denegados con usuarios reales.
 - **Excepciones de la Fase 3** (2026-11-25, commit `999847d`), las dos previstas y acotadas: Trino escribe solo en `gold/_trino_metastore/`, prefijo vetado al worker, y `bronze-maintenance` borra solo en `bronze/odoo/`.
 - **Plan de pago.** TLS y Docker Secrets en la Fase 6.
 - **Disparador.** Datos reales o acceso desde otro equipo.
@@ -261,7 +263,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** `LLM_PROVIDER=nim` envía el esquema de Gold y la pregunta a la API de NVIDIA. Sus [términos de prueba](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf) (consultados el 2026-11-24) solo permiten pruebas internas y evaluación (1.4), prohíben incluir datos confidenciales o personales (2.6) y autorizan a NVIDIA a usar lo enviado y lo generado para mejorar sus productos, incluidos sus modelos (3.3).
 - **Riesgo.** Una pregunta puede contener datos personales («ventas a Juan Pérez»). Dependencia de un servicio gratuito cuyo catálogo cambia: el 2026-11-24 ya no incluía Qwen Coder. En los foros de NVIDIA se habla de 40 peticiones por minuto, sin confirmación oficial.
 - **Mitigación actual.** Desactivado por defecto. La API no arranca con `nim` sin clave, exige HTTPS y no muestra la clave en logs, errores ni respuestas (con pruebas). `GET /api/llm` y la interfaz indican que el prompt sale del host. Nunca se envían filas de resultados.
-- **Fase 4.** El soporte sigue intacto: misma interfaz, sin enviar filas, y de los errores de Trino solo los de análisis, que no contienen datos. La salida estructurada de NIM no se usa porque no está probada: se pide JSON en el prompt y se comprueba al recibirlo.
+- **Fase 4.** El soporte sigue intacto: misma interfaz y sin enviar filas. De un error de Trino solo sale el mensaje si es de análisis; el de los de ejecución puede citar un valor de una fila (`Invalid format: "<cliente>"`) y se sustituye por un texto fijo, con pruebas. La salida estructurada de NIM no se usa porque no está probada: se pide JSON en el prompt y se comprueba al recibirlo.
 - **Plan de pago.** Antes de activarlo: aviso antes de la primera pregunta, detección de datos personales en la pregunta y prueba con una clave real. El modelo `nvidia/nemotron-3.5-lightning-30b-a3b` figura en el catálogo público, pero no se ha ejecutado.
 - **Disparador.** **Bloquea el uso de NIM con datos reales.** También un cambio de términos o la retirada del modelo.
 
@@ -338,6 +340,15 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Odoo y el CDC quedan parados hasta que alguien lo nota. No se pierden datos: el conector y Bronze continúan donde estaban (comprobado).
 - **Pago.** Pagada el 2026-11-25 (commit `4741296`). `odoo-db`, `odoo` y `caddy` llevan su configuración dentro de imágenes propias. Comprobado: tras reiniciar Docker Desktop, los diez servicios vuelven a estar sanos en 72 s sin intervenir. El coste es que un cambio en `infra/` exige repetir el `up` con `--build`.
 
+<a id="td-028"></a>
+### TD-028 · Silver y Gold se procesan enteros en memoria
+
+- **Contexto.** Bronze se lee de forma incremental, pero `medallion-transform` carga la tabla Silver completa para aplicar los cambios, y reconstruye entero cada modelo Gold cuando cambia una de sus fuentes. Con las tablas core de demostración, la mayor tiene 68 filas.
+- **Riesgo.** Con mucho más volumen no bastan ni los 512 MiB ni el ciclo de 60 s. No afecta a la corrección: si el proceso muere, la tabla queda como estaba.
+- **Mitigación actual.** Límite de memoria propio, separado de la ingesta. Medido el 2026-11-25: 114 MiB de 512.
+- **Plan de pago.** Leer de Silver solo las claves afectadas y actualizar Gold por clave.
+- **Disparador.** Más del 70 % del límite de memoria, o un ciclo de más de 60 s.
+
 ## Plantilla
 
 ```markdown
@@ -362,4 +373,4 @@ Añade también la fila correspondiente en la tabla de resumen.
 | 2026-11-24 | Puesta en marcha persistente. TD-005: consumo de Connect actualizado. |
 | 2026-11-25 | TD-022: esquema 443/8443 con un solo nombre, certificado validado por `check_exposure.py` y contraseña rotada. TD-020: 22 GB, GPU y certificado público comprobados. Nueva, Crítica: TD-025. |
 | 2026-11-25 | Fase 2, Bronze. Pagada: TD-025. Mitigadas: TD-014 (usuarios de MinIO) y TD-016 (integración continua en verde). TD-003 con copia restaurable. TD-005 con prueba automática. TD-022: `Secure` en las cookies y exposición de más, sin accesos. TD-010 y TD-020 actualizadas. Nuevas: TD-026 y TD-027. |
-| 2026-11-25 | Fases 3, 4 y 5. Pagadas: TD-002, TD-007, TD-016, TD-018, TD-019 y TD-027. Mitigadas: TD-011, TD-013, TD-020 y TD-026. Aceptada por el usuario: TD-022 (demo pública). TD-001 alcanza su disparador: 72 % en preguntas no vistas. TD-010 y TD-014 actualizadas. |
+| 2026-11-25 | Fases 3, 4 y 5. Pagadas: TD-002, TD-007, TD-016, TD-018, TD-019 y TD-027. Mitigadas: TD-011, TD-013, TD-020 y TD-026. Aceptada por el usuario: TD-022 (demo pública). TD-001 alcanza su disparador: 72 % en preguntas no vistas. TD-006, TD-010, TD-014 y TD-021 actualizadas. Nueva: TD-028. |

@@ -85,6 +85,7 @@ def refresh(lake: Lake, model: Model) -> GoldResult:
     ):
         return GoldResult(model.name, 0, False)
 
+    # TODO(TD-028): reconstruye el modelo entero aunque cambie una sola fila.
     frame = conform(model, model.build(load_frames(lake, set(model.sources))))
     write_deltalake(
         table,
