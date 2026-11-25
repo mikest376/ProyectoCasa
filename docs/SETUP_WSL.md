@@ -89,10 +89,22 @@ Afecta a todas las distribuciones, incluida la de Docker Desktop. **Deshacer:** 
 
 **Espacio en disco.** Antes de descargar imágenes, mira el espacio libre de la unidad de **Windows** donde Docker guarda sus datos (por defecto, `C:`). `df` dentro de WSL engaña: su disco virtual anuncia 1 TB aunque el disco real esté lleno. El proyecto completo necesita unos 40 GB.
 
-**Cambiar de unidad.** *Settings → Resources → Advanced → Disk image location* → *Apply & restart*. Docker mueve el disco y lo elimina de la unidad original. Hazlo antes de descargar imágenes: si la unidad se llena, el daemon se cae. Para comprobar la ubicación, desde PowerShell:
+**Cambiar de unidad.** *Settings → Resources → Advanced → Disk image location* → *Apply & restart*. Docker mueve el disco y lo elimina de la unidad original. Hazlo antes de descargar imágenes: si la unidad se llena, el daemon se cae.
+
+- Elige una carpeta vacía: Docker le añade `DockerDesktopWSL` al final. No copies `docker-data` a mano: quedan dos discos virtuales de unos 18 GB y Docker solo usa uno.
+- Mientras copia, el motor aparece parado (`docker desktop status`). Desde un disco mecánico puede tardar más de una hora. No cierres Docker ni apagues el equipo.
+- El ajuste no cambia hasta que la copia termina. Para comprobar la ubicación, desde PowerShell:
 
 ```powershell
 (Get-Content "$env:APPDATA\Docker\settings-store.json" | ConvertFrom-Json).CustomWslDistroDir
+```
+
+**Ubuntu también ocupa un disco virtual**, que no se mueve con el de Docker. Con Docker Desktop cerrado:
+
+```powershell
+Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss | Get-ItemProperty | Select-Object DistributionName, BasePath
+wsl --shutdown
+wsl --manage Ubuntu --move E:\WSL\Ubuntu
 ```
 
 **`docker-credential-desktop.exe` no encontrado.** La terminal o VS Code se abrieron antes de instalar Docker Desktop y tienen un PATH antiguo. Ciérralos y vuelve a abrirlos.
