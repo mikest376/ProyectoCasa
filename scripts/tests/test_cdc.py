@@ -56,14 +56,17 @@ INSERT INTO parted VALUES (1, 1), (2, 2);
 
 
 def docker(*args: str, stdin: str | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    result = subprocess.run(
         ["docker", *args],
         input=stdin,
         capture_output=True,
         text=True,
-        check=check,
+        check=False,
         env={**os.environ, **ENVIRONMENT},
     )
+    if check and result.returncode != 0:
+        raise RuntimeError(f"docker {args[0]}: código {result.returncode}: {result.stderr.strip()}")
+    return result
 
 
 def execute(sql: str, role: str = "postgres") -> subprocess.CompletedProcess[str]:
@@ -101,7 +104,7 @@ class CdcTest(unittest.TestCase):
         # Por TCP: durante la inicialización, PostgreSQL solo escucha en el socket local.
         while docker("exec", CONTAINER, "pg_isready", "-h", "127.0.0.1", check=False).returncode:
             if time.monotonic() > deadline:
-                raise TimeoutError(docker("logs", "--tail", "20", CONTAINER).stderr)
+                raise TimeoutError(docker("logs", "--tail", "20", CONTAINER, check=False).stderr)
             time.sleep(0.5)
         cdc.compose = in_container
 
@@ -118,7 +121,7 @@ class CdcTest(unittest.TestCase):
 
     def sql(self, statement: str, role: str = "odoo") -> list[str]:
         result = execute(statement, role)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 0, f"código {result.returncode}: {result.stderr}")
         return result.stdout.split()
 
     def assert_blocked(self, statement: str) -> None:
