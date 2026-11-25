@@ -4,7 +4,7 @@
 
 Plataforma analítica local que replica Odoo 17 casi en tiempo real en un lakehouse abierto y permite consultarlo en lenguaje natural. Funciona en un solo equipo con Docker Compose y un modelo de lenguaje local: por defecto, los datos del ERP no salen del host.
 
-> **Estado: Fase 2, Bronze.** Un cambio en Odoo llega a Kafka en torno a un segundo y a Delta Lake en el lote siguiente (30 s). Las 198 tablas con datos están en Bronze, sin pérdidas tras caídas forzadas del worker, de MinIO y de Docker. La API y el frontend son esqueletos funcionales. El detalle de lo que falta por probar está en [TD-020](docs/TECHNICAL_DEBT.md#td-020).
+> **Estado: Fase 5, dashboard conversacional.** De un cambio en Odoo a una respuesta en el navegador: Debezium y Kafka, Delta Lake en tres capas, Trino y un modelo local de 3B en la GPU. Una pregunta se responde en unos 3 segundos, con el SQL a la vista. Precisión medida: 72 % en preguntas no vistas ([TD-001](docs/TECHNICAL_DEBT.md#td-001)). Lo que falta por probar está en [TD-020](docs/TECHNICAL_DEBT.md#td-020).
 
 - [Objetivos](#objetivos)
 - [Arquitectura](#arquitectura)
@@ -64,7 +64,7 @@ flowchart LR
 
     subgraph app["6 · Aplicación"]
         api["FastAPI<br/>Text-to-SQL seguro"]
-        web["Next.js<br/>Tremor + Tailwind"]
+        web["Next.js<br/>Tailwind + Recharts"]
         api --> web
     end
 
@@ -191,7 +191,7 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 | `source` | PostgreSQL, Odoo | Probado |
 | `streaming` | Kafka, Debezium Connect | Probado |
 | `lakehouse` | MinIO, Unity Catalog | Probado, con un usuario de MinIO por servicio |
-| `apps` | Worker (ingesta, transformación y mantenimiento), FastAPI, Next.js | El worker escribe Bronze, Silver y Gold |
+| `apps` | Worker (ingesta, transformación y mantenimiento), FastAPI, Next.js | Probado de extremo a extremo, también a través de Caddy |
 | `observability` | Langfuse 2 | Probado |
 | `caddy` | Caddy | Probado en `127.0.0.1`, con certificado público |
 | `query` | Trino | Probado: 25 tablas, iguales en los dos catálogos |
@@ -349,7 +349,7 @@ Con `CADDY_RESTART=no`, el valor por defecto, Caddy no se reinicia solo: tras ap
 | **2** | Bronze: worker, MinIO e integración continua | Todas las tablas en Delta; un reinicio no pierde eventos | Completada |
 | **3** | Silver, Gold, Unity Catalog y Trino | Los cinco dominios se consultan desde Trino | Completada |
 | **4** | Text-to-SQL: LLM, FastAPI y Langfuse | Conjunto de evaluación medido y SQL peligroso rechazado | Completada: 72 % en preguntas no vistas ([TD-001](docs/TECHNICAL_DEBT.md#td-001)) |
-| **5** | Dashboard conversacional: Next.js y Tremor | De la pregunta al gráfico, de extremo a extremo | Pendiente |
+| **5** | Dashboard conversacional: Next.js y Tailwind | De la pregunta al gráfico, de extremo a extremo | Completada |
 | **6** | Endurecimiento: JWT, TLS interno, observabilidad, copias | Deuda de severidad Alta pagada | Pendiente |
 
 ## Documentación

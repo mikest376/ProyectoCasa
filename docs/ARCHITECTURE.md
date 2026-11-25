@@ -193,7 +193,7 @@ sequenceDiagram
         A->>T: Consulta con LIMIT y tiempo máximo
         T-->>A: Filas
         A-->>W: Datos, SQL y tipo de gráfico
-        W-->>U: Visualización con Tremor
+        W-->>U: Gráfico o tabla, con el SQL
     end
 ```
 
@@ -305,5 +305,7 @@ El token del workflow solo lee, y las acciones están fijadas por commit.
 | Trino en un nodo | Presupuesto de RAM | Clúster ([TD-008](TECHNICAL_DEBT.md#td-008)) |
 | Modelo local 3B | Cabe en la VRAM libre | Modelo 7B con capas en CPU |
 | Langfuse 2 | Solo necesita PostgreSQL | Versiones 3 y 4, con ClickHouse, Redis y S3 |
+| Gold sin filtros obligatorios | Un modelo de 3B los olvida: facturas y abonos, en tablas distintas | Una tabla con una columna de tipo |
+| Tailwind 4 y componentes propios | El código queda en el repositorio y admite React 19 | `@tremor/react`, que exige React 18 |
 | Perfiles de Compose | Arrancar y validar por capas | Todo el stack a la vez |
 | Caddy con una ruta `/api` | Un solo origen: sin CORS ni API publicada aparte | Proxy dentro de Next.js |

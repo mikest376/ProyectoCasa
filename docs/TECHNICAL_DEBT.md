@@ -4,7 +4,7 @@ Deuda asumida de forma consciente para el MVP. Lo que no está aquí no es deuda
 
 El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../CLAUDE.md#flujo-obligatorio-de-deuda-técnica). La plantilla está al final de este documento.
 
-**Última revisión:** 2026-11-25 (Fase 2, Bronze)
+**Última revisión:** 2026-11-25 (Fase 5, interfaz)
 
 ## Criterios
 
@@ -45,7 +45,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-016](#td-016) | Sin integración continua | Media | Pagada | 2026-11-25 |
 | [TD-017](#td-017) | Sin copias de seguridad | Media | Abierta | Fase 6 |
 | [TD-018](#td-018) | Text-to-SQL sin conjunto de evaluación | Media | Pagada | 2026-11-25 |
-| [TD-019](#td-019) | Tremor con poco mantenimiento | Media | Pendiente de decisión | Fase 5 |
+| [TD-019](#td-019) | Tremor con poco mantenimiento | Media | Pagada | 2026-11-25 |
 | [TD-020](#td-020) | Servicios sin probar en ejecución | Media | Mitigada | Con clave de NIM |
 | [TD-021](#td-021) | NVIDIA NIM envía datos a un tercero | Alta | Abierta | Con clave de NIM |
 | [TD-022](#td-022) | Exposición a Internet de la demo del TFG | Alta | Aceptada | Después del MVP |
@@ -240,10 +240,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-019 · Tremor con poco mantenimiento
 
 - **Contexto.** `@tremor/react` 3.18.7 exige React 18 (`^18.0.0`) y su repositorio no cambia desde enero de 2025. La variante de copiar y pegar requiere Tailwind 4 y su repositorio no cambia desde octubre de 2025. Next.js 16 admite React 18 y 19.
-- **Riesgo.** Quedar anclados a React 18 y Tailwind 3, o mantener componentes copiados.
-- **Mitigación actual.** El esqueleto del frontend usa React 19, sin Tremor ni Tailwind.
-- **Plan de pago.** Decidir al empezar la Fase 5. Recomendación: componentes de copiar y pegar con React 19 y Tailwind 4, porque el código queda en el repositorio. Elegir `@tremor/react` obligaría a bajar a React 18.
-- **Disparador.** Inicio de la Fase 5.
+- **Pago.** Pagada el 2026-11-25 (commit `0cd14cc`). Decisión del usuario: Tailwind CSS 4 y componentes propios al estilo de Tremor Raw sobre Next.js 16 y React 19, sin `@tremor/react`. El código está en `services/frontend/src/components`; los gráficos usan Recharts 3.11, que admite React 19.
+- **Disparador.** Recharts deja de mantenerse: los gráficos están en un solo fichero.
 
 <a id="td-020"></a>
 ### TD-020 · Servicios sin probar en ejecución
@@ -284,7 +282,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Exposición de más** (2026-11-25). Tras el ensayo, `.env` conservó la IP de la red local y Caddy quedó publicado de 09:43 a 13:42. Llegaron 67 peticiones: 44 respuestas 401, 23 redirecciones y ningún acceso. Caddy está retirado y `.env`, en modo local.
 - **Decisión del usuario** (2026-11-25). Mantener la demo publicada de forma permanente, solo con datos de demostración, y asumir sus riesgos: deja de ser una excepción temporal a [TD-009](#td-009) y [TD-012](#td-012). `.env` conserva la IP de la red local y `CADDY_RESTART=unless-stopped`; `.env.example` sigue en `127.0.0.1` y `no`. El Caddyfile va dentro de la imagen, para que arranque con Docker ([TD-027](#td-027)).
 - **Comprobado antes de publicar** (2026-11-25). Con el nombre y el certificado reales en `127.0.0.1`, `check_exposure.py` termina con **0 fallos**: certificado de Let's Encrypt válido hasta el 22 de febrero de 2027 en 443 y 8443, 401 sin credenciales, cookies con `Secure` y rutas de Odoo bloqueadas. El nombre público resuelve a la dirección del router.
-- **Pendiente de una persona.** Publicar Caddy en la IP de la red local y probarlo desde fuera: CLAUDE.md reserva ese paso a una persona y no lo ha hecho el agente.
+- **Interfaz a través de Caddy** (2026-11-25). Con el nombre y el certificado reales en `127.0.0.1` y un navegador real: 401 sin contraseña y 200 con ella en 443, `/api` y 8443; preguntas de los cinco dominios respondidas en 3,4 a 4,1 s; mismo origen, sin errores de CORS ni de cookies. La única respuesta de error es la de una pregunta rechazada a propósito.
+- **Pendiente de una persona.** Publicar Caddy en la IP de la red local y probarlo desde fuera: CLAUDE.md reserva ese paso a una persona y no lo ha hecho el agente. Desde dentro de la red no se puede comprobar: la conexión al nombre público agota el tiempo, así que el router no parece admitir NAT de retorno (la prueba se hizo con Caddy sin publicar, por lo que no es concluyente).
 - **Límites conocidos.** Los scripts prueban desde el propio equipo, no desde Internet. Con la exposición permanente, la contraseña única sin límite de intentos y Odoo sin parches pesan más. Comprobar una contraseña cuesta CPU (bcrypt): muchas peticiones pueden frenar el equipo.
 - **Plan de pago.** Para dejar de asumirla: pagar TD-009 y TD-012, o poner delante un túnel con identidad. Mientras siga publicada: revisar los accesos (`docker compose logs caddy`), cambiar la contraseña con regularidad y no cargar datos reales.
 - **Disparador.** Cualquier acceso inesperado en los logs, o una vulnerabilidad crítica de Odoo 17: corte inmediato con `docker compose --profile caddy stop caddy`.
@@ -362,3 +361,4 @@ Añade también la fila correspondiente en la tabla de resumen.
 | 2026-11-24 | Puesta en marcha persistente. TD-005: consumo de Connect actualizado. |
 | 2026-11-25 | TD-022: esquema 443/8443 con un solo nombre, certificado validado por `check_exposure.py` y contraseña rotada. TD-020: 22 GB, GPU y certificado público comprobados. Nueva, Crítica: TD-025. |
 | 2026-11-25 | Fase 2, Bronze. Pagada: TD-025. Mitigadas: TD-014 (usuarios de MinIO) y TD-016 (integración continua en verde). TD-003 con copia restaurable. TD-005 con prueba automática. TD-022: `Secure` en las cookies y exposición de más, sin accesos. TD-010 y TD-020 actualizadas. Nuevas: TD-026 y TD-027. |
+| 2026-11-25 | Fases 3, 4 y 5. Pagadas: TD-002, TD-007, TD-016, TD-018, TD-019 y TD-027. Mitigadas: TD-011, TD-013, TD-020 y TD-026. Aceptada por el usuario: TD-022 (demo pública). TD-001 alcanza su disparador: 72 % en preguntas no vistas. TD-010 y TD-014 actualizadas. |
