@@ -289,7 +289,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Validación sin contraseña** (2026-11-26). El nombre resuelve a la IP pública del router en 8.8.8.8, 9.9.9.9, el router y el servidor autoritativo de No-IP. El router hace NAT de retorno, así que desde dentro se recorre el camino público entero: DNS, router, firewall de Windows, Docker y Caddy. Por ese camino y por la IP de la red local, 0 fallos:
   - Certificado de Let's Encrypt válido en 443 y 8443 (TLS 1.3, hasta el 22 de febrero de 2027).
   - El 80 redirige a HTTPS con un 308.
-  - 401 en 10 rutas, con `/websocket`, `/.env` y `admin:admin` incluidos.
+  - 401 en las 9 pruebas sin contraseña válida, con `/websocket`, `/.env` y `admin:admin` incluidos.
   - `check_exposure.py`, 0 fallos. Fuera de `127.0.0.1` solo escucha Docker, en 80, 443 y 8443; los otros 16 puertos probados están cerrados.
   - Caddy llega al frontend, a FastAPI y a Odoo, pero no a Trino, MinIO, Ollama, PostgreSQL, Kafka ni Unity Catalog.
   - Dos preguntas reales recorren Caddy, FastAPI, Ollama y Trino por la red interna: 25 s en frío y 4,4 s con el modelo cargado.
