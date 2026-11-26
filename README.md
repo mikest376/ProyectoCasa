@@ -310,7 +310,11 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
 2. Elimina las redirecciones del router (80, 443 y 8443) y la regla del firewall: `Remove-NetFirewallRule -DisplayName 'TFG Caddy'`.
 3. Cambia las contraseñas usadas.
 
-Con `CADDY_RESTART=no`, el valor por defecto, Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda. Con `unless-stopped`, vuelve con Docker.
+Con `CADDY_RESTART=no`, el valor por defecto, Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda. Con `unless-stopped`, vuelve con Docker. Para que la demo permanente siga en pie hace falta además:
+
+- Que Docker Desktop arranque al iniciar sesión (*Settings → General → Start Docker Desktop when you sign in*), y que alguien inicie sesión tras cada reinicio de Windows.
+- Que el equipo no se suspenda: `powercfg /change standby-timeout-ac 0`.
+- Un DNS que responda en el adaptador de red: Caddy lo necesita para renovar el certificado.
 
 ## Estructura del repositorio
 

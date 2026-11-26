@@ -178,7 +178,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 ### TD-012 · Odoo 17 fuera de soporte estándar
 
 - **Contexto.** El [soporte estándar de Odoo 17](https://www.odoo.com/documentation/20.0/administration/standard_extended_support.html) terminó en septiembre de 2026. La [imagen oficial](https://github.com/docker-library/official-images/blob/master/library/odoo) ya solo se publica para 18.0, 19.0 y 20.0; la última de 17.0 es `17.0-20260908`.
-- **Riesgo.** Sin parches de seguridad. La severidad sube a Alta porque Odoo se expondrá durante la defensa.
+- **Riesgo.** Sin parches de seguridad. La severidad sube a Alta porque Odoo está publicado de forma permanente ([TD-022](#td-022)).
 - **Mitigación actual.** Datos de demostración, imagen fijada, rol de base de datos sin superusuario, accesos por defecto cerrados y Caddy delante con contraseña y rutas bloqueadas.
 - **Plan de pago.** Migrar a una versión con soporte tras el MVP. Silver absorbe los cambios de esquema.
 - **Disparador.** Vulnerabilidad crítica o uso con datos reales. La exposición más allá de la defensa está asumida por el usuario ([TD-022](#td-022)).
@@ -270,7 +270,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 <a id="td-022"></a>
 ### TD-022 · Exposición a Internet de la demo del TFG
 
-- **Contexto.** Excepción aprobada a [TD-009](#td-009): durante la presentación, Odoo y el frontend se publican a través de Caddy. Como solo hay un nombre público, el frontend usa el 443 y Odoo el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. El router redirige los tres puertos al equipo. La regla 11 de CLAUDE.md incluye el 8443 desde el 2026-11-25.
+- **Contexto.** Excepción aprobada a [TD-009](#td-009): Odoo y el frontend se publican a través de Caddy, de forma permanente desde la decisión del usuario (más abajo). Como solo hay un nombre público, el frontend usa el 443 y Odoo el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. El router redirige los tres puertos al equipo. La regla 11 de CLAUDE.md incluye el 8443 desde el 2026-11-25.
 - **Riesgo.** Equipo doméstico accesible desde Internet; una sola contraseña compartida, sin límite de intentos (la imagen oficial de Caddy no lo incluye); Odoo sin parches ([TD-012](#td-012)); Docker Desktop oculta la IP del cliente, así que Caddy no puede filtrar por IP; y los certificados públicos anuncian el dominio. Con un solo nombre, las cookies de Odoo también llegan al 443, porque no distinguen puertos.
 - **Mitigación actual.**
   - `CADDY_BIND_IP=127.0.0.1` por defecto: exponer es un acto explícito de una persona. Por defecto, Caddy no se reinicia solo (`CADDY_RESTART=no`).
@@ -285,8 +285,17 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Decisión del usuario** (2026-11-25, commit `4741296`). Mantener la demo publicada de forma permanente, solo con datos de demostración, y asumir sus riesgos: deja de ser una excepción temporal a [TD-009](#td-009) y [TD-012](#td-012). `.env` conserva la IP de la red local y `CADDY_RESTART=unless-stopped`; `.env.example` sigue en `127.0.0.1` y `no`. El Caddyfile va dentro de la imagen, para que arranque con Docker ([TD-027](#td-027)).
 - **Comprobado antes de publicar** (2026-11-25). Con el nombre y el certificado reales en `127.0.0.1`, `check_exposure.py` termina con **0 fallos**: certificado de Let's Encrypt válido hasta el 22 de febrero de 2027 en 443 y 8443, 401 sin credenciales, cookies con `Secure` y rutas de Odoo bloqueadas. El nombre público resuelve a la dirección del router.
 - **Interfaz a través de Caddy** (2026-11-25, commit `0cd14cc`). Con el nombre y el certificado reales en `127.0.0.1` y un navegador real: 401 sin contraseña y 200 con ella en 443, `/api` y 8443; preguntas de los cinco dominios respondidas en 3,4 a 4,1 s; mismo origen, sin errores de CORS ni de cookies. La única respuesta de error es la de una pregunta rechazada a propósito.
-- **Pendiente de una persona.** Publicar Caddy en la IP de la red local y probarlo desde fuera: CLAUDE.md reserva ese paso a una persona y no lo ha hecho el agente. Desde dentro de la red no se puede comprobar: la conexión al nombre público agota el tiempo, así que el router no parece admitir NAT de retorno (la prueba se hizo con Caddy sin publicar, por lo que no es concluyente).
-- **Límites conocidos.** Los scripts prueban desde el propio equipo, no desde Internet. Con la exposición permanente, la contraseña única sin límite de intentos y Odoo sin parches pesan más. Comprobar una contraseña cuesta CPU (bcrypt): muchas peticiones pueden frenar el equipo.
+- **Publicada** (2026-11-26, 15:08). El usuario arrancó Caddy en la IP de la red local, con reinicio `unless-stopped`.
+- **Validación sin contraseña** (2026-11-26). El nombre resuelve a la IP pública del router en 8.8.8.8, 9.9.9.9, el router y el servidor autoritativo de No-IP. El router hace NAT de retorno, así que desde dentro se recorre el camino público entero: DNS, router, firewall de Windows, Docker y Caddy. Por ese camino y por la IP de la red local, 0 fallos:
+  - Certificado de Let's Encrypt válido en 443 y 8443 (TLS 1.3, hasta el 22 de febrero de 2027).
+  - El 80 redirige a HTTPS con un 308.
+  - 401 en 10 rutas, con `/websocket`, `/.env` y `admin:admin` incluidos.
+  - `check_exposure.py`, 0 fallos. Fuera de `127.0.0.1` solo escucha Docker, en 80, 443 y 8443; los otros 16 puertos probados están cerrados.
+  - Caddy llega al frontend, a FastAPI y a Odoo, pero no a Trino, MinIO, Ollama, PostgreSQL, Kafka ni Unity Catalog.
+  - Dos preguntas reales recorren Caddy, FastAPI, Ollama y Trino por la red interna: 25 s en frío y 4,4 s con el modelo cargado.
+- **Pendiente** (2026-11-26). Las pruebas con contraseña por el nombre público: 200 en la interfaz, en `/api` y en Odoo, y rutas bloqueadas y cookies con contraseña. El agente no conoce la contraseña y CLAUDE.md no le deja recrear Caddy con otra. También falta una prueba desde fuera de la red: la herramienta de descarga del agente rechaza el dominio. La última llegada desde Internet comprobada es la del 2026-11-25.
+- **Disponibilidad** (2026-11-26). Caddy vuelve cuando vuelve Docker, pero Docker Desktop no arranca al iniciar sesión, y Windows suspende el equipo a los 10 minutos sin uso (no lo ha hecho en dos días). El DNS secundario del equipo, `4.4.4.4`, no responde: Windows tarda 7 s en resolver o falla, y Caddy necesita DNS para renovar el certificado.
+- **Límites conocidos.** Los scripts prueban desde el propio equipo: el NAT de retorno cubre el router, pero no lo que filtre el operador. Con la exposición permanente, la contraseña única sin límite de intentos y Odoo sin parches pesan más. Comprobar una contraseña cuesta CPU (bcrypt): muchas peticiones pueden frenar el equipo. Las respuestas 401 y la redirección del 80 llevan `Server: Caddy`, sin versión: el `-Server` del Caddyfile no llega a ellas.
 - **Plan de pago.** Para dejar de asumirla: pagar TD-009 y TD-012, o poner delante un túnel con identidad. Mientras siga publicada: revisar los accesos (`docker compose logs caddy`), cambiar la contraseña con regularidad y no cargar datos reales.
 - **Disparador.** Cualquier acceso inesperado en los logs, o una vulnerabilidad crítica de Odoo 17: corte inmediato con `docker compose --profile caddy stop caddy`.
 
@@ -329,8 +338,9 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
   - **Tope de WSL: de 22 a 16 GB.** Es lo que de verdad protege `C:`. `autoMemoryReclaim=gradual` también está puesto ([SETUP_WSL](SETUP_WSL.md#3-wslconfig)), pero no basta: con los servicios en marcha la máquina nunca está ociosa y la caché no se devuelve (13 GB tras descargar imágenes).
   - Límites ajustados a lo medido: de 19 840 a 13 632 MiB con todo el conjunto, incluidos Ollama y los dos servicios nuevos. Con los 15 servicios en marcha, WSL usa 5,2 GB.
   - `check_env.sh` avisa por debajo de 20 GB libres. `wsl --shutdown` devuelve la memoria en el acto.
-- **En uso normal no pasa.** Medido sin compilar: `C:` tiene 21,2 GB libres sin WSL, 17,6 con los 15 servicios y 12,6 con el modelo cargado y respondiendo preguntas.
+- **Recién arrancado no pasa.** Medido sin compilar: `C:` tiene 21,2 GB libres sin WSL, 17,6 con los 15 servicios y 12,6 con el modelo cargado y respondiendo preguntas.
 - **Sigue pasando al compilar.** Tras construir todas las imágenes con los 15 servicios en marcha, la memoria confirmada llegó a 45 de 46 GB y `C:` bajó a 5,1 GB (disparador alcanzado). `wsl --shutdown` devolvió 15,6 GB; con todo arrancado de nuevo quedan 17,8 GB. Antes de una compilación grande, parar Docker y reiniciar WSL.
+- **Con un día de uso, también** (2026-11-26). Tras 20 horas con los 16 servicios y la demo publicada, sin compilar nada, `C:` tiene 6,0 GB libres: el disparador se alcanza sin descargas ni compilaciones. La paginación ocupa 14,5 GB y WSL retiene 14 GB, 8,3 de ellos de caché de disco.
 - **Plan de pago.** Mover el fichero de paginación a `E:` o fijar su tamaño (cambio de Windows: lo decide el usuario). Medir `C:` con un día de uso.
 - **Disparador.** Menos de 10 GB libres en `C:` antes de una descarga o de una compilación.
 
@@ -375,3 +385,4 @@ Añade también la fila correspondiente en la tabla de resumen.
 | 2026-11-25 | TD-022: esquema 443/8443 con un solo nombre, certificado validado por `check_exposure.py` y contraseña rotada. TD-020: 22 GB, GPU y certificado público comprobados. Nueva, Crítica: TD-025. |
 | 2026-11-25 | Fase 2, Bronze. Pagada: TD-025. Mitigadas: TD-014 (usuarios de MinIO) y TD-016 (integración continua en verde). TD-003 con copia restaurable. TD-005 con prueba automática. TD-022: `Secure` en las cookies y exposición de más, sin accesos. TD-010 y TD-020 actualizadas. Nuevas: TD-026 y TD-027. |
 | 2026-11-25 | Fases 3, 4 y 5. Pagadas: TD-002, TD-007, TD-016, TD-018, TD-019 y TD-027. Mitigadas: TD-011, TD-013, TD-020 y TD-026. Aceptada por el usuario: TD-022 (demo pública). TD-001 alcanza su disparador: 72 % en preguntas no vistas. TD-006, TD-010, TD-014 y TD-021 actualizadas. Nueva: TD-028. |
+| 2026-11-26 | TD-022: publicada por el usuario; camino público validado sin contraseña, con 0 fallos y NAT de retorno; faltan las pruebas con contraseña y desde fuera. TD-026: alcanza su disparador sin compilar (6,0 GB libres en `C:`). TD-012: severidad justificada por la publicación permanente. |
