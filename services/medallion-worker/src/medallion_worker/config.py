@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     s3_bucket_silver: str = "silver"
     s3_bucket_gold: str = "gold"
 
+    # Sal de los seudónimos de Silver (TD-004). Solo la necesita la transformación.
+    pii_hash_salt: SecretStr | None = None
+
     trino_url: str = "http://trino:8080"
     trino_worker_user: str = "medallion-worker"
     trino_catalog: str = "lakehouse"
@@ -54,6 +57,13 @@ class Settings(BaseSettings):
     @property
     def bronze_uri(self) -> str:
         return f"s3://{self.s3_bucket_bronze}/odoo"
+
+    @property
+    def pii_salt(self) -> bytes:
+        """Sin sal no se escribe Silver: un seudónimo sin secreto se podría invertir."""
+        if self.pii_hash_salt is None or not self.pii_hash_salt.get_secret_value():
+            raise ValueError("falta PII_HASH_SALT: la transformación no puede seudonimizar")
+        return self.pii_hash_salt.get_secret_value().encode()
 
     @property
     def partitioned_tables(self) -> frozenset[str]:

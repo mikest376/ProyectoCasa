@@ -15,7 +15,7 @@ from medallion_worker.catalogs import CatalogError, Entry, TrinoClient, UnityCli
 from medallion_worker.gold_models import MODELS
 from medallion_worker.storage import Lake
 from medallion_worker.transform import Transformer
-from samples import NOW, local_lake, write_bronze
+from samples import NOW, SALT, local_lake, write_bronze
 
 
 class FakeTrino:
@@ -133,7 +133,7 @@ def lake(tmp_path_factory: pytest.TempPathFactory) -> Lake:
     path = tmp_path_factory.mktemp("lake")
     write_bronze(path, samples.demo_events())
     result = local_lake(path)
-    Transformer(result, "es_ES").run_once(NOW)
+    Transformer(result, "es_ES", SALT).run_once(NOW)
     return result
 
 

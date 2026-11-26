@@ -14,6 +14,8 @@ from medallion_worker.storage import Lake
 
 NOW = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
 PREFIX = "odoo.public"
+# Sal de los seudónimos en las pruebas (TD-004). La real solo está en .env.
+SALT = b"sal-de-prueba"
 
 
 def days(year: int, month: int, day: int) -> int:

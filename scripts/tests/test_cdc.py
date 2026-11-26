@@ -11,12 +11,14 @@ Biblioteca estándar.
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import subprocess
 import sys
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -186,6 +188,32 @@ class CdcTest(unittest.TestCase):
         self.sql("CREATE TABLE keyed (api_key text PRIMARY KEY);")
         with self.assertRaisesRegex(cdc.CdcError, r"claves primarias: keyed\.api_key"):
             cdc.check()
+
+    def test_check_stops_on_uncovered_personal_data(self) -> None:
+        """TD-004: sin las líneas de datos personales, el alta del conector se bloquea."""
+        self.sql("CREATE TABLE res_partner (id serial PRIMARY KEY, name text, email text, city text);")
+        only_secrets = [p for p in cdc.exclude_patterns() if "login" not in p and "res_partner" not in p]
+        with mock.patch.object(cdc, "exclude_patterns", return_value=only_secrets):
+            with self.assertRaisesRegex(cdc.CdcError, r"datos personales") as raised:
+                cdc.check()
+        for column in ("res_partner.name", "res_partner.email", "res_users.login"):
+            self.assertIn(column, str(raised.exception))
+        self.assertNotIn("res_partner.city", str(raised.exception))
+
+    def test_the_real_list_covers_personal_data_and_nothing_else(self) -> None:
+        self.sql("CREATE TABLE res_partner (id serial PRIMARY KEY, name text, email text, city text);")
+        cdc.check()
+        patterns = [re.compile(pattern) for pattern in cdc.exclude_patterns()]
+
+        def excluded(name: str) -> bool:
+            return any(pattern.fullmatch(f"public.{name}") for pattern in patterns)
+
+        for name in ("res_partner.name", "res_partner.email", "crm_lead.contact_name",
+                     "res_users.login", "res_partner_bank.acc_number", "mail_mail.email_to"):
+            self.assertTrue(excluded(name), name)
+        for name in ("res_partner.city", "sale_order.name", "crm_lead.email_state",
+                     "res_partner.id", "product_template.name"):
+            self.assertFalse(excluded(name), name)
 
 
 if __name__ == "__main__":

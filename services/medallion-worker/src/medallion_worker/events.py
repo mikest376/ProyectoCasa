@@ -57,7 +57,8 @@ def table_name(topic: str) -> str:
     return topic.rsplit(".", maxsplit=1)[-1]
 
 
-def _as_text(value: Any) -> str | None:
+def as_text(value: Any) -> str | None:
+    """JSON compacto, como se guarda en Bronze."""
     if value is None:
         return None
     text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -81,7 +82,7 @@ def parse_event(
         return None
     try:
         envelope = json.loads(value)
-        key_text = None if key is None else _as_text(json.loads(key))
+        key_text = None if key is None else as_text(json.loads(key))
     except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as error:
         raise InvalidEventError("JSON no válido") from error
     if not isinstance(envelope, dict):
@@ -102,6 +103,6 @@ def parse_event(
         source_lsn=_as_int(source.get("lsn")),
         source_ts_ms=_as_int(source.get("ts_ms")),
         key=key_text,
-        before=_as_text(envelope.get("before")),
-        after=_as_text(envelope.get("after")),
+        before=as_text(envelope.get("before")),
+        after=as_text(envelope.get("after")),
     )

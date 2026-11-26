@@ -2,6 +2,10 @@
 
 Un contrato es una selección, no una copia: correos, teléfonos, direcciones, identificadores
 fiscales y textos libres no pasan de Bronze, porque el análisis no los necesita (TD-004).
+
+Los nombres de contactos e iniciativas tampoco llegan: Debezium no los captura. Sus columnas
+(con `pseudonym`) no se leen del evento: Silver pone un seudónimo derivado del id, o las deja
+vacías, y Gold sigue agrupando y cruzando por cliente (medallion_worker.pseudonyms).
 """
 
 from dataclasses import dataclass
@@ -42,6 +46,8 @@ class Column:
     kind: Kind
     description: str
     required: bool = False
+    # Dato personal que Debezium no captura (TD-004): prefijo del seudónimo, o "" si queda vacío.
+    pseudonym: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +79,11 @@ METADATA: tuple[tuple[str, pl.DataType, str], ...] = (
 
 def _c(name: str, kind: Kind, description: str, required: bool = False) -> Column:
     return Column(name, kind, description, required)
+
+
+def _p(name: str, prefix: str, description: str) -> Column:
+    """Columna personal: Silver la rellena, nunca la lee del evento."""
+    return Column(name, "text", description, pseudonym=prefix)
 
 
 _ID = _c("id", "integer", "Clave primaria en Odoo", True)
@@ -284,13 +295,13 @@ CONTRACTS: tuple[Contract, ...] = (
         "Iniciativas y oportunidades",
         (
             _ID,
-            _c("name", "text", "Título", True),
+            _p("name", "Oportunidad", "Seudónimo: Oportunidad_ y 8 caracteres derivados del id"),
             _c("type", "text", "Tipo: lead u opportunity", True),
             _c("stage_id", "integer", "Etapa"),
             _c("team_id", "integer", "Equipo de ventas"),
             _c("user_id", "integer", "Comercial (res_users)"),
             _c("partner_id", "integer", "Cliente (res_partner)"),
-            _c("partner_name", "text", "Empresa indicada en la iniciativa"),
+            _p("partner_name", "", "Siempre vacío: la empresa escrita a mano es un dato personal"),
             _c("city", "text", "Ciudad"),
             _c("country_id", "integer", "País"),
             _c("priority", "text", "Prioridad, de 0 a 3"),
@@ -313,7 +324,7 @@ CONTRACTS: tuple[Contract, ...] = (
         "Contactos: clientes, proveedores y empresas",
         (
             _ID,
-            _c("name", "text", "Nombre"),
+            _p("name", "Contacto", "Seudónimo: Contacto_ y 8 caracteres derivados del id"),
             _c("is_company", "boolean", "Es una empresa"),
             _c("parent_id", "integer", "Empresa a la que pertenece"),
             _c("commercial_partner_id", "integer", "Entidad comercial"),

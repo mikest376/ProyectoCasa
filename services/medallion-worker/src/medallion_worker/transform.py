@@ -35,9 +35,10 @@ class Summary:
 class Transformer:
     """Un error de contrato detiene solo su tabla: las demás siguen y Gold conserva lo anterior."""
 
-    def __init__(self, lake: Lake, language: str) -> None:
+    def __init__(self, lake: Lake, language: str, salt: bytes) -> None:
         self._lake = lake
         self._language = language
+        self._salt = salt
         # Versión de Bronze ya procesada por tabla: evita releer si no hay nada nuevo.
         self._seen: dict[str, int] = {}
         self._broken: dict[str, str] = {}
@@ -50,7 +51,7 @@ class Transformer:
             if version == self._seen.get(contract.table):
                 continue
             try:
-                result = silver.refresh(self._lake, contract, self._language, moment)
+                result = silver.refresh(self._lake, contract, self._language, moment, self._salt)
             except ContractError as error:
                 # Reintentar sin datos ni código nuevos no sirve: se espera a que cambie Bronze.
                 self._broken[contract.table] = error.reason
@@ -111,7 +112,7 @@ def run(
     clock: Callable[[], float] = time.monotonic,
 ) -> None:
     """Repite el ciclo. Un fallo de almacenamiento o de catálogo se reintenta en el siguiente."""
-    transformer = Transformer(lake, settings.worker_language)
+    transformer = Transformer(lake, settings.worker_language, settings.pii_salt)
     synced_at: float | None = None
     maintained = _maintenance_day(settings)
     with httpx.Client(timeout=catalogs.TIMEOUT) as http:

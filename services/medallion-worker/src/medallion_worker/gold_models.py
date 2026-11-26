@@ -53,17 +53,22 @@ def _day(column: str) -> pl.Expr:
     return pl.col(column).dt.date()
 
 
+def _role(column: str, role: str) -> pl.Expr:
+    """Silver guarda los contactos como Contacto_<seudónimo>; Gold los nombra por su papel."""
+    return pl.col(column).str.replace(r"^Contacto_", f"{role}_")
+
+
 def _partners(frames: Frames, key: str) -> pl.DataFrame:
     return frames["res_partner"].select(
         pl.col("id").alias(key),
-        pl.col("name").alias("customer_name"),
+        _role("name", "Cliente").alias("customer_name"),
         pl.col("city").alias("customer_city"),
     )
 
 
 def _salespeople(frames: Frames, key: str) -> pl.DataFrame:
     people = frames["res_partner"].select(
-        pl.col("id").alias("partner_id"), pl.col("name").alias("salesperson_name")
+        pl.col("id").alias("partner_id"), _role("name", "Comercial").alias("salesperson_name")
     )
     users = frames["res_users"].select(pl.col("id").alias(key), "partner_id")
     return users.join(people, on="partner_id", how="left").drop("partner_id")
@@ -113,7 +118,7 @@ QUOTATION_STATUS = {"draft": "open", "sent": "open", "cancel": "cancelled"}
 def _dim_customer(frames: Frames) -> pl.DataFrame:
     return frames["res_partner"].select(
         pl.col("id").alias("customer_id"),
-        pl.col("name").alias("customer_name"),
+        _role("name", "Cliente").alias("customer_name"),
         pl.col("is_company").fill_null(False),
         "city",
         (pl.col("customer_rank").fill_null(0) > 0).alias("is_customer"),
@@ -326,7 +331,7 @@ def _fact_vendor_bills(frames: Frames) -> pl.DataFrame:
         pl.col("invoice_date").alias("bill_date"),
         pl.col("invoice_date_due").alias("due_date"),
         pl.col("partner_id").alias("vendor_id"),
-        pl.col("customer_name").alias("vendor_name"),
+        pl.col("customer_name").str.replace(r"^Cliente_", "Proveedor_").alias("vendor_name"),
         "amount_untaxed",
         "amount_total",
         pl.col("amount_residual").alias("amount_due"),

@@ -12,9 +12,10 @@ import samples
 from medallion_worker import gold
 from medallion_worker.contracts import BY_TABLE, CONTRACTS
 from medallion_worker.gold_models import DOMAINS, MODELS, Model
+from medallion_worker.pseudonyms import pseudonym
 from medallion_worker.storage import Lake
 from medallion_worker.transform import Transformer
-from samples import NOW, event, local_lake, payload, write_bronze
+from samples import NOW, SALT, event, local_lake, payload, write_bronze
 
 BY_NAME = {model.name: model for model in MODELS}
 
@@ -22,7 +23,7 @@ BY_NAME = {model.name: model for model in MODELS}
 def build(path: Path) -> Lake:
     write_bronze(path, samples.demo_events())
     result = local_lake(path)
-    summary = Transformer(result, "es_ES").run_once(NOW)
+    summary = Transformer(result, "es_ES", SALT).run_once(NOW)
     assert summary.broken == {}
     assert sorted(summary.models) == sorted(BY_NAME)
     return result
@@ -66,8 +67,9 @@ def test_orders_and_quotations_are_separate(lake: Lake) -> None:
     orders = by(lake, "fact_sales_orders", "order_number")
     assert sorted(orders) == ["S00100", "S00102"]
     assert orders["S00100"]["order_date"] == date(2026, 10, 5)
-    assert orders["S00100"]["customer_name"] == "Azure Interior"
-    assert orders["S00100"]["salesperson_name"] == "Mitchell Admin"
+    # TD-004: los nombres no llegan a Gold, sí un seudónimo estable con el papel de cada uno.
+    assert orders["S00100"]["customer_name"] == f"Cliente_{pseudonym(SALT, 'res_partner', 1)}"
+    assert orders["S00100"]["salesperson_name"] == f"Comercial_{pseudonym(SALT, 'res_partner', 3)}"
     assert [orders[n]["is_pending_invoicing"] for n in ("S00100", "S00102")] == [False, True]
     assert orders["S00100"]["is_pending_delivery"] is False
     assert all(row["is_confirmed"] for row in orders.values())
@@ -109,7 +111,7 @@ def test_invoices_credit_notes_and_bills_are_separate(lake: Lake) -> None:
     bills = by(lake, "fact_vendor_bills", "bill_number")
     assert set(bills) == {"BILL/303"}
     assert bills["BILL/303"]["amount_total"] == Decimal("622.27")
-    assert bills["BILL/303"]["vendor_name"] == "Wood Corner"
+    assert bills["BILL/303"]["vendor_name"] == f"Proveedor_{pseudonym(SALT, 'res_partner', 4)}"
 
 
 def test_invoice_lines_skip_taxes_and_credit_notes(lake: Lake) -> None:
@@ -163,13 +165,14 @@ def test_opportunity_status(lake: Lake) -> None:
     }
     assert opportunities[700]["probability"] == Decimal("33.33")
     assert opportunities[700]["priority"] == "alta"
-    assert opportunities[701]["customer_name"] == "Empresa X"
+    # Sin cliente, la empresa escrita a mano era un dato personal: ya no se captura.
+    assert opportunities[701]["customer_name"] is None
     assert list(by(lake, "fact_leads", "lead_id")) == [703]
 
 
 def test_rows_deleted_in_odoo_disappear_from_gold(tmp_path: Path) -> None:
     lake = build(tmp_path)
-    transformer = Transformer(lake, "es_ES")
+    transformer = Transformer(lake, "es_ES", SALT)
     transformer.run_once(NOW)
     write_bronze(
         tmp_path,
@@ -222,7 +225,7 @@ def test_a_broken_table_does_not_stop_the_others(tmp_path: Path) -> None:
     broken = payload("crm_lead", 1)
     del broken["type"]
     write_bronze(tmp_path, [*events, event("crm_lead", 0, broken, lsn=1)])
-    summary = Transformer(local_lake(tmp_path), "es_ES").run_once(NOW)
+    summary = Transformer(local_lake(tmp_path), "es_ES", SALT).run_once(NOW)
     assert summary.broken == {"crm_lead": "faltan columnas: type"}
     assert "fact_sales_orders" in summary.models
     assert "fact_opportunities" in summary.models

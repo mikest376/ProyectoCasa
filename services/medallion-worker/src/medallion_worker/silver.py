@@ -16,6 +16,7 @@ from deltalake import CommitProperties, DeltaTable, Transaction
 
 from medallion_worker.contracts import METADATA, Contract
 from medallion_worker.decoding import ContractError, Decoder
+from medallion_worker.pseudonyms import personal_values
 from medallion_worker.storage import Lake, delta_schema
 
 logger = logging.getLogger(__name__)
@@ -53,11 +54,13 @@ def apply_events(
     events: pl.DataFrame,
     current: dict[int, dict[str, Any]],
     now: datetime,
+    salt: bytes,
 ) -> dict[int, dict[str, Any]]:
     """Aplica los eventos en orden sobre el estado actual. Devuelve solo las filas que cambian.
 
     El orden lo da el LSN, no la llegada. El offset desempata, y las coordenadas de Kafka no
-    bastan para identificar un evento: si se recrea el clúster, se repiten (TD-010).
+    bastan para identificar un evento: si se recrea el clúster, se repiten (TD-010). Las columnas
+    personales reciben su seudónimo (TD-004).
     """
     ordered = events.unique(
         ["_topic", "_partition", "_offset", "source_lsn"], keep="first", maintain_order=True
@@ -74,6 +77,7 @@ def apply_events(
         values = {} if event["op"] == "d" else decoder.row(_payload(contract, event["after"]))
         row = dict.fromkeys(contract.names) if state is None else dict(state)
         row |= values
+        row |= personal_values(contract, key, salt)
         row |= {
             "id": key,
             "_is_deleted": event["op"] == "d",
@@ -108,7 +112,9 @@ def _source_time(milliseconds: int | None) -> datetime | None:
     return datetime.fromtimestamp(0, tz=UTC) + timedelta(milliseconds=milliseconds)
 
 
-def refresh(lake: Lake, contract: Contract, language: str, now: datetime) -> SilverResult:
+def refresh(
+    lake: Lake, contract: Contract, language: str, now: datetime, salt: bytes
+) -> SilverResult:
     """Lleva a Silver los cambios de una tabla que aún no se han aplicado."""
     uri = lake.silver(contract.domain, contract.table)
     table = lake.open_or_create(
@@ -127,7 +133,7 @@ def refresh(lake: Lake, contract: Contract, language: str, now: datetime) -> Sil
 
     keys = {_primary_key(contract, text) for text in events["key"].unique().to_list()}
     current = _current_rows(lake, uri, contract, keys)
-    changed = apply_events(contract, Decoder(contract, language), events, current, now)
+    changed = apply_events(contract, Decoder(contract, language), events, current, now, salt)
     if changed:
         _merge(table, contract, changed.values(), events["_ingested_at"].max())
     return SilverResult(contract.table, events.height, len(changed))

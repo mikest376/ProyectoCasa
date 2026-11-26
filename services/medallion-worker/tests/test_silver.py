@@ -12,14 +12,15 @@ import samples
 from medallion_worker import silver
 from medallion_worker.contracts import BY_TABLE, CONTRACTS, Contract
 from medallion_worker.decoding import UNAVAILABLE, ContractError, Decoder
+from medallion_worker.pseudonyms import pseudonym
 from medallion_worker.storage import Lake
-from samples import NOW, days, event, local_lake, micros, payload, write_bronze
+from samples import NOW, SALT, days, event, local_lake, micros, payload, write_bronze
 
 ORDERS = BY_TABLE["sale_order"]
 
 
 def refresh(lake: Lake, contract: Contract = ORDERS) -> silver.SilverResult:
-    return silver.refresh(lake, contract, "es_ES", NOW)
+    return silver.refresh(lake, contract, "es_ES", NOW, SALT)
 
 
 def rows(lake: Lake, contract: Contract = ORDERS) -> list[dict[str, Any]]:
@@ -97,6 +98,58 @@ def test_every_contract_keeps_sensitive_columns_out() -> None:
         assert not forbidden & set(contract.names), contract.table
         assert contract.columns[0].name == "id"
         assert len(set(contract.names)) == len(contract.names)
+    personal = {
+        (contract.table, column.name)
+        for contract in CONTRACTS
+        for column in contract.columns
+        if column.pseudonym is not None
+    }
+    assert personal == {("res_partner", "name"), ("crm_lead", "name"), ("crm_lead", "partner_name")}
+
+
+# --- Datos personales (TD-004) ------------------------------------------------------------------
+
+
+def test_personal_columns_are_never_read_from_the_event() -> None:
+    decoder = Decoder(BY_TABLE["res_partner"], "es_ES")
+    with_name = decoder.row(payload("res_partner", 1, name="Azure Interior"))
+    without = payload("res_partner", 1)
+    del without["name"]
+    assert "name" not in with_name
+    assert decoder.row(without) == with_name
+
+
+def test_pseudonyms_are_stable_and_depend_on_the_salt_and_the_table() -> None:
+    first = pseudonym(SALT, "res_partner", 7)
+    assert first == pseudonym(SALT, "res_partner", 7)
+    assert len(first) == 8
+    assert first != pseudonym(b"otra-sal", "res_partner", 7)
+    assert first != pseudonym(SALT, "crm_lead", 7)
+    assert first != pseudonym(SALT, "res_partner", 8)
+
+
+def test_silver_keeps_pseudonyms_and_never_the_original(tmp_path: Path) -> None:
+    write_bronze(tmp_path, samples.demo_events())
+    lake = local_lake(tmp_path)
+    for table in ("res_partner", "crm_lead"):
+        refresh(lake, BY_TABLE[table])
+    partners = {row["id"]: row for row in rows(lake, BY_TABLE["res_partner"])}
+    assert partners[1]["name"] == f"Contacto_{pseudonym(SALT, 'res_partner', 1)}"
+    leads = {row["id"]: row for row in rows(lake, BY_TABLE["crm_lead"])}
+    assert leads[701]["name"] == f"Oportunidad_{pseudonym(SALT, 'crm_lead', 701)}"
+    assert leads[701]["partner_name"] is None
+    stored = str([*partners.values(), *leads.values()])
+    for original in ("Azure Interior", "Deco Addict", "Mitchell Admin", "Empresa X", "Ganada"):
+        assert original not in stored
+
+
+def test_a_delete_without_previous_state_still_gets_its_pseudonym(tmp_path: Path) -> None:
+    write_bronze(tmp_path, [event("res_partner", 0, None, lsn=10, op="d", key=5)])
+    lake = local_lake(tmp_path)
+    refresh(lake, BY_TABLE["res_partner"])
+    (row,) = rows(lake, BY_TABLE["res_partner"])
+    assert row["name"] == f"Contacto_{pseudonym(SALT, 'res_partner', 5)}"
+    assert row["_is_deleted"] is True
 
 
 # --- Estado actual ------------------------------------------------------------------------------

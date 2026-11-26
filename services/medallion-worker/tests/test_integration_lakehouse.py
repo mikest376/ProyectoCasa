@@ -65,7 +65,7 @@ def lake(settings: Settings) -> Lake:
     for batch in batcher.drain():
         sink.write(batch)
     result = Lake.from_settings(settings)
-    summary = Transformer(result, "es_ES").run_once()
+    summary = Transformer(result, "es_ES", samples.SALT).run_once()
     assert summary.broken == {}
     return result
 
@@ -134,7 +134,7 @@ def test_changes_are_visible_without_registering_again(
     batcher.add(samples.event("res_partner", 900, row, lsn=9000, op="c"))
     for batch in batcher.drain():
         DeltaSink(settings.bronze_uri, storage_options(settings)).write(batch)
-    assert "dim_customer" in Transformer(synced, "es_ES").run_once().models
+    assert "dim_customer" in Transformer(synced, "es_ES", samples.SALT).run_once().models
     assert client.query(query) == [[before + 1]]
 
 

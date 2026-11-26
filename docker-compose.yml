@@ -467,6 +467,8 @@ services:
       TRINO_CATALOG: ${TRINO_CATALOG:-lakehouse}
       UNITY_CATALOG_URL: ${UNITY_CATALOG_URL:-http://unity-catalog:8080}
       UNITY_CATALOG_NAME: ${UNITY_CATALOG_NAME:-lakehouse}
+      # Sal de los seudónimos de Silver (TD-004): solo la recibe la transformación.
+      PII_HASH_SALT: ${PII_HASH_SALT:?falta PII_HASH_SALT en .env}
       POLARS_MAX_THREADS: "4"
     networks: [lakehouse]
     healthcheck:

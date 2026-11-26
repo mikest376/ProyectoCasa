@@ -99,16 +99,18 @@ class Decoder:
             "timestamp": _timestamp,
             "translated": _translated(language),
         }
-        self._converters = {column.name: converters[column.kind] for column in contract.columns}
+        # Las columnas personales no se leen nunca del evento, aunque vengan (TD-004).
+        self._captured = tuple(column for column in contract.columns if column.pseudonym is None)
+        self._converters = {column.name: converters[column.kind] for column in self._captured}
 
     def row(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Valores tipados. Las columnas TOAST sin cambios no aparecen en el resultado."""
-        missing = [name for name in self._contract.names if name not in payload]
+        missing = [column.name for column in self._captured if column.name not in payload]
         if missing:
             raise ContractError(self._contract.table, f"faltan columnas: {', '.join(missing)}")
         return {
             column.name: self._value(column, payload[column.name])
-            for column in self._contract.columns
+            for column in self._captured
             if payload[column.name] != UNAVAILABLE
         }
 
