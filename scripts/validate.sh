@@ -8,11 +8,11 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd) || exit 2
 cd "$ROOT" || exit 2
 
-SHELLCHECK_IMAGE=koalaman/shellcheck:v0.11.0
-HADOLINT_IMAGE=hadolint/hadolint:v2.15.1-alpine
-ACTIONLINT_IMAGE=rhysd/actionlint:1.7.12
+SHELLCHECK_IMAGE=koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+HADOLINT_IMAGE=hadolint/hadolint:v2.15.1-alpine@sha256:a1d49ae1a4e83c1dbad26b8c1ad7588c8bd1e04f4866b34ad3cac50335198552
+ACTIONLINT_IMAGE=rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 GITLEAKS_IMAGE=zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
-export CADDY_IMAGE=caddy:2.11.9-alpine
+export CADDY_IMAGE=caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
 
 failures=0
 run() {
@@ -101,6 +101,7 @@ secrets_files() {
 run "compose: sintaxis" docker compose --env-file .env.example --profile "*" config --quiet
 run "compose: presupuesto de memoria" budget
 run "compose: credenciales raíz de MinIO" minio_root
+run "imágenes: fijadas por digest (TD-024)" bash scripts/pin_digests.sh
 run "scripts: shellcheck" docker run --rm --network none -v "$mount" -w /repo "$SHELLCHECK_IMAGE" \
     scripts/*.sh scripts/tests/*.sh infra/odoo/entrypoint.sh infra/odoo/init.sh infra/minio/init.sh
 run "scripts: python y JSON" python_scripts

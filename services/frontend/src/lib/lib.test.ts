@@ -13,6 +13,7 @@ import {
   formatSql,
   isMonthly,
   modelName,
+  mustConfirmExternal,
   toNumber,
 } from "./format.ts";
 
@@ -99,6 +100,13 @@ test("etiquetas y modelo", () => {
   assert.equal(columnLabel("lost_opportunities"), "Lost opportunities");
   assert.equal(modelName("ollama", valid.model), "Ollama · qwen2.5-coder:3b");
   assert.equal(modelName("nim", "nvidia/x"), "NVIDIA NIM");
+});
+
+test("con un modelo externo, nada sale sin confirmar el aviso (TD-021)", () => {
+  assert.equal(mustConfirmExternal({ external: true }, false), true);
+  assert.equal(mustConfirmExternal({ external: true }, true), false);
+  assert.equal(mustConfirmExternal({ external: false }, false), false);
+  assert.equal(mustConfirmExternal(null, false), false);
 });
 
 test("el SQL se parte por cláusulas sin tocar los textos", () => {

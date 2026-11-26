@@ -11,7 +11,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 2
 MIN_RAM_MIB=15500
 MIN_DISK_GIB=20
 MAX_BUDGET_MIB=14336
-GPU_IMAGE=postgres:15.20-bookworm
+GPU_IMAGE=postgres:15.20-bookworm@sha256:0cb925629e7eb35c77276f3165440d1670c35c2ddbe92b346c579299b75a520f
 
 failures=0
 warnings=0

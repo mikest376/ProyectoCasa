@@ -6,7 +6,7 @@ import { AnswerCard, ModelBadge, ProblemCard } from "@/components/answer-card";
 import { ArrowIcon, Button, Callout, Card, ContrastIcon } from "@/components/ui";
 import { type Answer, askQuestion, type Problem } from "@/lib/api";
 import type { Context } from "@/lib/backend";
-import { modelName } from "@/lib/format";
+import { modelName, mustConfirmExternal } from "@/lib/format";
 
 type Entry = {
   id: number;
@@ -22,13 +22,16 @@ const HISTORY = 12;
 export function Workspace({ context }: { context: Context }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [question, setQuestion] = useState("");
+  // La confirmación del aviso de privacidad dura hasta recargar la página (TD-021).
+  const [confirmed, setConfirmed] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const counter = useRef(0);
   const pending = entries.some((entry) => !entry.answer && !entry.problem);
+  const blocked = mustConfirmExternal(context.llm, confirmed);
 
   async function ask(text: string) {
     const trimmed = text.trim();
-    if (trimmed.length < 3 || pending) return;
+    if (trimmed.length < 3 || pending || blocked) return;
     counter.current += 1;
     const id = counter.current;
     setQuestion("");
@@ -57,6 +60,24 @@ export function Workspace({ context }: { context: Context }) {
       <Header context={context} />
       <div className="grid gap-8 lg:grid-cols-[17rem_minmax(0,1fr)]">
         <main className="min-w-0 lg:order-2">
+          {context.llm?.external && (
+            <div className="mb-4">
+              <Callout title="Las preguntas salen del equipo" tone="warning">
+                Responde {modelName(context.llm.provider, context.llm.model)}, un servicio externo.
+                Sus condiciones de prueba prohíben enviar datos personales o confidenciales y le
+                permiten usar lo enviado para mejorar sus modelos. No escribas nombres, correos,
+                teléfonos ni identificadores: si la pregunta parece llevarlos, no se envía.
+                <label className="mt-3 flex items-center gap-2 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={confirmed}
+                    onChange={(event) => setConfirmed(event.target.checked)}
+                  />
+                  Entendido: mis preguntas no llevarán datos personales
+                </label>
+              </Callout>
+            </div>
+          )}
           <form onSubmit={submit}>
             <Card className="p-4 focus-within:border-accent sm:p-5">
               <label htmlFor="question" className="text-sm font-medium">
@@ -79,8 +100,12 @@ export function Workspace({ context }: { context: Context }) {
                 className="mt-2 w-full resize-none bg-transparent text-lg outline-none placeholder:text-muted"
               />
               <div className="mt-2 flex items-center justify-between gap-4">
-                <p className="text-xs text-muted">Solo lectura, sobre la capa Gold.</p>
-                <Button type="submit" disabled={pending || question.trim().length < 3}>
+                <p className="text-xs text-muted">
+                  {blocked
+                    ? "Confirma el aviso para enviar la pregunta."
+                    : "Solo lectura, sobre la capa Gold."}
+                </p>
+                <Button type="submit" disabled={pending || blocked || question.trim().length < 3}>
                   Preguntar
                   <ArrowIcon />
                 </Button>
@@ -109,7 +134,11 @@ export function Workspace({ context }: { context: Context }) {
           </div>
           {entries.length === 0 && <Intro context={context} />}
         </main>
-        <Examples context={context} disabled={pending} onPick={(text) => void ask(text)} />
+        <Examples
+          context={context}
+          disabled={pending || blocked}
+          onPick={(text) => void ask(text)}
+        />
       </div>
     </div>
   );

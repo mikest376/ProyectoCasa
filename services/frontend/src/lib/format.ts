@@ -155,6 +155,11 @@ export function modelName(provider: string, model: string): string {
   return `Ollama · ${model.split("-instruct")[0] ?? model}`;
 }
 
+/** TD-021: con un modelo externo, no se envía nada hasta confirmar el aviso de privacidad. */
+export function mustConfirmExternal(llm: { external: boolean } | null, confirmed: boolean): boolean {
+  return llm?.external === true && !confirmed;
+}
+
 const CLAUSES = [
   "WITH",
   "SELECT",

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -18,6 +18,9 @@ from lakehouse_api.examples import EXAMPLES, ExampleGroup
 from lakehouse_api.gold_catalog import CatalogUnavailableError, GoldCatalog
 from lakehouse_api.llm import LLMClient, LLMError, build_llm_client
 from lakehouse_api.pipeline import BusyError, Pipeline, QuestionFailedError
+from lakehouse_api.privacy import personal_data
+from lakehouse_api.system_health import SystemHealth
+from lakehouse_api.system_health import check as check_system
 from lakehouse_api.tracing import build_tracer
 from lakehouse_api.trino_client import TrinoClient
 
@@ -26,6 +29,7 @@ router = APIRouter(prefix="/api")
 
 MAX_QUESTION = 300
 STATUS_BY_CODE = {
+    "personal_data": 422,
     "sql_rejected": 422,
     "bad_output": 422,
     "query_failed": 422,
@@ -115,6 +119,15 @@ async def health() -> Health:
     return Health(status="ok")
 
 
+@router.get("/system/health")
+async def system_health(request: Request, response: Response) -> SystemHealth:
+    """Dependencias del backend (TD-015). 503 si alguna imprescindible falla."""
+    result = await check_system(request.app.state.http, request.app.state.settings)
+    if result.status == "fail":
+        response.status_code = 503
+    return result
+
+
 @router.get("/llm")
 async def llm_info(llm: Annotated[LLMClient, Depends(get_llm)]) -> LLMInfo:
     """Qué modelo responde y si el prompt sale del host. La interfaz lo muestra."""
@@ -149,6 +162,13 @@ async def query(
     pipeline: Annotated[Pipeline, Depends(get_pipeline)],
     llm: Annotated[LLMClient, Depends(get_llm)],
 ) -> QueryResponse:
+    if llm.external and (found := personal_data(body.question)):
+        # TD-021: la pregunta saldría del equipo hacia un tercero.
+        raise QuestionFailedError(
+            "personal_data",
+            f"La pregunta parece llevar datos personales ({', '.join(found)}) y el modelo es "
+            "externo: no se envía. Quítalos o usa el modelo local.",
+        )
     answer = await pipeline.ask(body.question)
     return QueryResponse(
         question=answer.question,
@@ -199,6 +219,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with httpx.AsyncClient() as http:
+            app.state.http = http
+            app.state.settings = config
             app.state.llm = build_llm_client(config, http)
             app.state.catalog = GoldCatalog(
                 http,

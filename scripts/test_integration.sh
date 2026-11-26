@@ -65,6 +65,7 @@ as() {
     worker) user=$(value WORKER_S3_ACCESS_KEY_ID) secret=$(value WORKER_S3_SECRET_ACCESS_KEY) ;;
     trino) user=$(value TRINO_S3_ACCESS_KEY_ID) secret=$(value TRINO_S3_SECRET_ACCESS_KEY) ;;
     janitor) user=$(value MAINTENANCE_S3_ACCESS_KEY_ID) secret=$(value MAINTENANCE_S3_SECRET_ACCESS_KEY) ;;
+    backup) user=$(value BACKUP_S3_ACCESS_KEY_ID) secret=$(value BACKUP_S3_SECRET_ACCESS_KEY) ;;
     esac
     MC_HOST_lake="http://$user:$secret@minio:9000" dc run --rm -T --no-deps \
         -e MC_HOST_lake --entrypoint mc minio-init "$@" >/dev/null 2>&1
@@ -118,6 +119,14 @@ for bucket in silver gold; do
     denied janitor rm "lake/$bucket/root.txt"
 done
 denied janitor admin user list lake
+# Las copias de seguridad leen las tres capas y no escriben ni borran nada (TD-017).
+for bucket in bronze silver gold; do
+    allowed backup ls "lake/$bucket"
+    allowed backup cat "lake/$bucket/root.txt"
+    denied backup cp /etc/os-release "lake/$bucket/backup.txt"
+    denied backup rm "lake/$bucket/root.txt"
+done
+denied backup admin user list lake
 
 docker build -q --target test -t "$project-worker-test" services/medallion-worker >/dev/null
 

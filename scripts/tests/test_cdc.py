@@ -26,7 +26,7 @@ sys.dont_write_bytecode = True
 
 import cdc  # noqa: E402
 
-IMAGE = "postgres:15.20-bookworm"
+IMAGE = "postgres:15.20-bookworm@sha256:0cb925629e7eb35c77276f3165440d1670c35c2ddbe92b346c579299b75a520f"
 CONTAINER = f"cdc-test-{os.getpid()}"
 ENVIRONMENT = {
     "POSTGRES_USER": "postgres",
