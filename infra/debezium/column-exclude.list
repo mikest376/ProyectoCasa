@@ -42,6 +42,7 @@ public\.ir_ui_view\.(arch_db|arch_prev)
 # --- Datos personales (TD-004): identifican a una persona ----------------------
 # No llegan a Kafka ni a Bronze. Silver pone seudónimos en los nombres que usa el
 # análisis (medallion_worker.pseudonyms). scripts/cdc.py check exige que estén aquí.
+# TODO(TD-029): los textos libres de otras tablas (cuentas analíticas, proyectos) no se revisan.
 public\.[^.]+\.([a-z0-9_]*_)?(email|email_normalized|email_from|email_cc|email_to|reply_to|phone|phone_sanitized|mobile|street2?|zip|vat|login|contact_name|partner_name|display_name|acc_number|acc_holder_name|common_name)
 public\.res_partner\.(name|complete_name|commercial_company_name|company_name|website|comment|function)
 public\.res_users\.signature

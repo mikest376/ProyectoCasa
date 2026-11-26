@@ -4,7 +4,7 @@ Deuda asumida de forma consciente para el MVP. Lo que no está aquí no es deuda
 
 El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../CLAUDE.md#flujo-obligatorio-de-deuda-técnica). La plantilla está al final de este documento.
 
-**Última revisión:** 2026-11-25 (Fase 5, interfaz)
+**Última revisión:** 2026-11-26 (Fase 6, endurecimiento)
 
 ## Criterios
 
@@ -30,31 +30,32 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 | [TD-001](#td-001) | El modelo 7B no cabe completo en la GPU (6 GB) | Media | Mitigada | Con clave de NIM |
 | [TD-002](#td-002) | Trino no lee Unity Catalog OSS para tablas Delta | Media | Pagada | 2026-11-25 |
 | [TD-003](#td-003) | MinIO Community archivado, con imagen de un tercero | Media | Aceptada | Después del MVP |
-| [TD-004](#td-004) | La captura global copia datos sensibles a Kafka y Bronze | Alta | Mitigada | Fase 6 |
-| [TD-005](#td-005) | La captura global puede bloquear escrituras en Odoo | Media | Mitigada | Fase 6 |
-| [TD-006](#td-006) | Retención de WAL ligada al slot de replicación | Media | Mitigada | Fase 6 |
+| [TD-004](#td-004) | La captura global copia datos sensibles a Kafka y Bronze | Alta | Pagada | 2026-11-26 |
+| [TD-005](#td-005) | La captura global puede bloquear escrituras en Odoo | Media | Pagada | 2026-11-26 |
+| [TD-006](#td-006) | Retención de WAL ligada al slot de replicación | Media | Mitigada | Después del MVP |
 | [TD-007](#td-007) | Bronze sin particionamiento avanzado ni mantenimiento | Media | Pagada | 2026-11-25 |
 | [TD-008](#td-008) | Trino en un solo nodo | Media | Aceptada | Después del MVP |
-| [TD-009](#td-009) | Sin autenticación JWT ni autorización | Alta | Abierta | Fase 6 |
+| [TD-009](#td-009) | Sin autenticación JWT ni autorización | Alta | Aceptada | Después del MVP |
 | [TD-010](#td-010) | Kafka con un solo broker y sin réplicas | Media | Aceptada | Después del MVP |
 | [TD-011](#td-011) | Eventos JSON sin registro de esquemas | Media | Mitigada | Fase 6 |
-| [TD-012](#td-012) | Odoo 17 fuera de soporte estándar | Alta | Abierta | Después del MVP |
+| [TD-012](#td-012) | Odoo 17 fuera de soporte estándar | Alta | Aceptada | Después del MVP |
 | [TD-013](#td-013) | Unity Catalog en modo desarrollo | Media | Mitigada | Fase 6 |
 | [TD-014](#td-014) | Credenciales raíz compartidas y tráfico interno sin TLS | Media | Mitigada | Fase 6 |
-| [TD-015](#td-015) | Sin observabilidad ni alertas de infraestructura | Media | Abierta | Fase 6 |
+| [TD-015](#td-015) | Sin observabilidad ni alertas de infraestructura | Media | Pagada | 2026-11-26 |
 | [TD-016](#td-016) | Sin integración continua | Media | Pagada | 2026-11-25 |
-| [TD-017](#td-017) | Sin copias de seguridad | Media | Abierta | Fase 6 |
+| [TD-017](#td-017) | Sin copias de seguridad | Media | Pagada | 2026-11-26 |
 | [TD-018](#td-018) | Text-to-SQL sin conjunto de evaluación | Media | Pagada | 2026-11-25 |
 | [TD-019](#td-019) | Tremor con poco mantenimiento | Media | Pagada | 2026-11-25 |
 | [TD-020](#td-020) | Servicios sin probar en ejecución | Media | Mitigada | Con clave de NIM |
-| [TD-021](#td-021) | NVIDIA NIM envía datos a un tercero | Alta | Abierta | Con clave de NIM |
+| [TD-021](#td-021) | NVIDIA NIM envía datos a un tercero | Alta | Mitigada | Con clave de NIM |
 | [TD-022](#td-022) | Exposición a Internet de la demo del TFG | Alta | Aceptada | Después del MVP |
 | [TD-023](#td-023) | Langfuse 2 sin parches de seguridad | Media | Abierta | Fase 6 |
-| [TD-024](#td-024) | Imágenes fijadas por tag, no por digest | Baja | Abierta | Fase 6 |
+| [TD-024](#td-024) | Imágenes fijadas por tag, no por digest | Baja | Pagada | 2026-11-26 |
 | [TD-025](#td-025) | El disco del proyecto y de Docker anuncia un fallo | Crítica | Pagada | 2026-11-25 |
 | [TD-026](#td-026) | La memoria de WSL puede llenar la unidad del sistema | Media | Mitigada | Fase 6 |
 | [TD-027](#td-027) | PostgreSQL no arranca solo al reiniciar Docker Desktop | Baja | Pagada | 2026-11-25 |
 | [TD-028](#td-028) | Silver y Gold se procesan enteros en memoria | Baja | Abierta | Después del MVP |
+| [TD-029](#td-029) | Textos libres que pueden nombrar a personas | Baja | Abierta | Con datos reales |
 
 ## Detalle
 
@@ -101,8 +102,12 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
   - `infra/debezium/column-exclude.list` excluye contraseñas, claves, tokens, credenciales SMTP e IMAP, parámetros del sistema, cuerpos de correo (llevan enlaces con token) y contenido de adjuntos. La captura sigue siendo de todas las tablas. Se excluye en vez de enmascarar porque el hash de un secreto corto se puede atacar.
   - `scripts/cdc.py check` compara la lista con el esquema real y **bloquea el alta del conector** si una columna sospechosa quedaría sin excluir. En la primera ejecución detectó dos secretos que no estaban en la lista.
   - Comprobado con Odoo 17 y datos de demostración: 59 de 4892 columnas excluidas (5 en tablas core) y ningún secreto en los 44 692 mensajes publicados.
-- **Plan de pago.** Quedan los **datos personales** (`res_partner`, usuarios, contactos de CRM), necesarios para el análisis. En la Fase 6, definir retención y borrado en Kafka y Bronze.
-- **Disparador.** **Bloquea la carga de datos personales reales.** Repetir la comprobación tras instalar módulos de Odoo.
+- **Pago** (2026-11-26, commit `eede9be`). Los datos personales tampoco se capturan: nombres, correos, teléfonos, direcciones, NIF, usuarios, cuentas bancarias y sus copias en correos, actividades, reuniones, plantillas, vistas y facturas. Son 155 columnas excluidas, antes 59. `cdc.py check` también bloquea el conector si queda sin excluir una columna con nombre personal (con pruebas).
+  - **Seudónimos.** Silver pone en `res_partner.name` y `crm_lead.name` un seudónimo derivado del id con `PII_HASH_SALT` (`Contacto_` u `Oportunidad_` y 8 caracteres), y Gold los nombra por su papel (`Cliente_`, `Comercial_`, `Proveedor_`). Las uniones siguen por id y la precisión de Text-to-SQL no cambia: ninguna pregunta de evaluación cita nombres.
+  - **Excepción única a la regla 4**, aprobada por el usuario el 2026-11-26. Se reescribieron 1933 eventos de Bronze en 17 tablas, sin las columnas excluidas y sin cambiar ninguna coordenada. Silver recibió los seudónimos, Gold se reconstruyó y se borraron los ficheros y el registro anteriores, porque las estadísticas de Delta también llevan valores. De Kafka se borraron los mensajes anteriores de los 16 topics afectados.
+  - **Comprobado.** `scripts/check_pii.py` busca 243 valores personales de Odoo (personas, no empresas) en las 226 tablas de las tres capas, en su registro, en sus checkpoints y en los ficheros sustituidos: 0 apariciones. Un evento nuevo de `res_partner` llega con 48 columnas y ninguna personal.
+- **Límite.** Los textos libres de otras tablas pueden nombrar a personas ([TD-029](#td-029)).
+- **Disparador.** Repetir `cdc.py check` y `check_pii.py` tras instalar módulos de Odoo.
 
 <a id="td-005"></a>
 ### TD-005 · La captura global puede bloquear escrituras en Odoo
@@ -111,7 +116,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Errores de escritura en el ERP, y presión de memoria en Kafka y Connect.
 - **Mitigación actual.** `scripts/cdc.py prepare` asigna `REPLICA IDENTITY FULL` a las tablas que lo necesitan. Probado: con los módulos del MVP, las 481 tablas tienen clave primaria; en una tabla de prueba sin ella se reprodujo el error y el script lo resolvió. Con unos 200 topics, Kafka usa 673 MiB y Connect, hasta 951 MiB de sus 1280 (74 %), medido el 2026-11-24 tras el snapshot inicial. El 2026-11-25, tras horas de uso, Connect llegó al 93 %: su límite sube a 1536 MiB.
 - **Pruebas.** `scripts/tests/test_cdc.py` ejecuta `prepare` y `check` contra un PostgreSQL desechable con la configuración, los roles y el SQL reales: reproduce el bloqueo, comprueba que se resuelve y que una tabla posterior lo vuelve a necesitar. Forma parte de `validate.sh`. `scripts/init_odoo.sh` repite `prepare` tras instalar módulos, antes de que Odoo vuelva a escribir.
-- **Plan de pago.** Queda un caso: instalar un módulo con tablas sin clave primaria desde la interfaz de Odoo, sin pasar por el script. En la Fase 6, alertar de tablas publicadas sin identidad.
+- **Pago** (2026-11-26, commit `fd43e70`). Quedaba un caso: un módulo con tablas sin clave primaria instalado desde la interfaz de Odoo, sin pasar por el script. `scripts/health_monitor.py` falla si alguna tabla publicada no tiene identidad de réplica, y también avisa de la memoria de Connect. Hay que ejecutarlo, o dejarlo con `--watch`: no envía avisos por su cuenta.
 - **Disparador.** Error `cannot update table ... because it does not have a replica identity`, o Connect por encima del 80 % de su límite.
 
 <a id="td-006"></a>
@@ -121,7 +126,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Al superar el tope, el slot se invalida y hace falta un snapshot completo. Sin tope, el disco se llenaría.
 - **Mitigación actual.** Tope de 4 GB y `heartbeat.interval.ms=10000`. `scripts/cdc.py status` muestra el retraso del slot. Probado: los cambios hechos con Connect parado se recuperan al arrancarlo, y el [procedimiento de recuperación](../infra/postgres/README.md#recuperar-un-slot-invalidado) repite el snapshot.
 - **Límite.** Un snapshot nuevo trae las filas que existen, no los borrados que ocurrieron sin slot: esas filas siguen activas en Silver.
-- **Plan de pago.** En la Fase 6, alertar sobre el retraso del slot y comparar las claves de Silver con las del último snapshot.
+- **Monitor** (2026-11-26, commit `fd43e70`). `scripts/health_monitor.py` falla con más de 2 GB de retraso del slot o con el slot perdido, y avisa por encima de 1 GB.
+- **Plan de pago.** Queda comparar las claves de Silver con las del último snapshot, después del MVP.
 - **Disparador.** Retraso del slot superior a 2 GB, o un snapshot repetido.
 
 <a id="td-007"></a>
@@ -152,7 +158,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Quien acceda al host puede leer los datos, y no hay trazabilidad por usuario.
 - **Mitigación actual.** Todos los puertos se publican solo en `127.0.0.1` y las redes están segmentadas: Odoo, el frontend y Caddy no alcanzan los servicios sin autenticación del plano de datos (comprobado). CORS está restringido al frontend.
 - **Excepción aprobada.** La demo del TFG, publicada de forma permanente por decisión del usuario, solo a través de Caddy, con contraseña, con datos de demostración y con los controles de [TD-022](#td-022).
-- **Plan de pago.** En la Fase 6, JWT con OIDC en FastAPI, roles por dominio y propagación del usuario a Trino.
+- **Decisión del usuario** (2026-11-26). Aceptada para el MVP y el TFG. La demo sigue tras Caddy con contraseña, y el usuario enciende y apaga a mano las redirecciones del router.
+- **Plan de pago.** Después del MVP: JWT con OIDC en FastAPI, roles por dominio, propagación del usuario a Trino y límite de intentos.
 - **Disparador.** **Bloquea cualquier otra exposición fuera del host**, y el uso de datos reales en la demo.
 
 <a id="td-010"></a>
@@ -180,6 +187,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** El [soporte estándar de Odoo 17](https://www.odoo.com/documentation/20.0/administration/standard_extended_support.html) terminó en septiembre de 2026. La [imagen oficial](https://github.com/docker-library/official-images/blob/master/library/odoo) ya solo se publica para 18.0, 19.0 y 20.0; la última de 17.0 es `17.0-20260908`.
 - **Riesgo.** Sin parches de seguridad. La severidad sube a Alta porque Odoo está publicado de forma permanente ([TD-022](#td-022)).
 - **Mitigación actual.** Datos de demostración, imagen fijada, rol de base de datos sin superusuario, accesos por defecto cerrados y Caddy delante con contraseña y rutas bloqueadas.
+- **Decisión del usuario** (2026-11-26). Aceptada para el MVP y el TFG, solo con datos de demostración.
 - **Plan de pago.** Migrar a una versión con soporte tras el MVP. Silver absorbe los cambios de esquema.
 - **Disparador.** Vulnerabilidad crítica o uso con datos reales. La exposición más allá de la defensa está asumida por el usuario ([TD-022](#td-022)).
 
@@ -208,7 +216,11 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** Solo hay healthchecks y logs rotados de Docker. Langfuse cubre las llamadas al LLM desde la Fase 4, no la infraestructura.
 - **Riesgo.** El retraso del CDC, los fallos del worker y las muertes por memoria pasan inadvertidos.
 - **Mitigación actual.** Healthchecks en los servicios, `scripts/cdc.py status` y `scripts/check_env.sh`.
-- **Plan de pago.** Métricas de retraso de consumidor, slot, memoria y VRAM en la Fase 6, dentro del presupuesto de RAM.
+- **Pago** (2026-11-26, commit `fd43e70`). Sin servicios nuevos, dentro del presupuesto de RAM:
+  - `scripts/health_monitor.py` comprueba el conector, el retraso del slot, la identidad de réplica, el retraso de la ingesta, la salud y la memoria de los contenedores, la VRAM y el espacio en `C:` y `E:`.
+  - `GET /api/system/health` da las dependencias que ve el backend (Trino, modelo, Unity Catalog y Langfuse), sin direcciones ni errores internos, y responde 503 si falla una imprescindible. El monitor la incluye.
+  - Medido: todo bien, salvo `C:` tras compilar ([TD-026](#td-026)).
+- **Límite.** No envía avisos: hay que ejecutarlo, o dejarlo con `--watch`, que solo escribe cuando algo cambia.
 - **Disparador.** Primera incidencia detectada por un usuario.
 
 <a id="td-016"></a>
@@ -226,7 +238,11 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** Todo el estado vive en volúmenes locales de Docker.
 - **Riesgo.** Pérdida total por fallo de disco o por `docker compose down -v`.
 - **Mitigación actual.** Los datos de demostración se regeneran y el código está en GitHub. Bronze se reconstruye desde Kafka durante 7 días, o con un snapshot nuevo. La imagen de MinIO tiene copia ([TD-003](#td-003)). `.env` solo existe en este equipo: conviene guardarlo en un gestor de contraseñas.
-- **Plan de pago.** Copias de PostgreSQL, MinIO, Unity Catalog y Langfuse, con prueba de restauración, en la Fase 6.
+- **Pago** (2026-11-26, commit `fd43e70`).
+  - `scripts/backup.sh` copia, fuera del repositorio, los PostgreSQL de Odoo y de Langfuse, los buckets de MinIO (con un usuario nuevo de solo lectura), Unity Catalog y los adjuntos de Odoo, con manifiesto y sumas.
+  - `scripts/restore.sh --verify` lo restaura en contenedores desechables y sin red, lee todas las tablas Delta y compara recuentos: 0 fallos. La copia ocupa 21 MB y tarda 56 s; la verificación, 39 s. `test_integration.sh` prueba los permisos del usuario nuevo.
+- **Sin probar.** `restore.sh <copia> --yes`, la restauración sobre el sistema en marcha.
+- **Límite.** Por defecto la copia queda en el mismo disco que los datos (`E:`): hay que llevarla a otro. Incluye la base de Odoo entera, con sus datos personales.
 - **Disparador.** Datos que no se puedan regenerar.
 
 <a id="td-018"></a>
@@ -264,7 +280,8 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Riesgo.** Una pregunta puede contener datos personales («ventas a Juan Pérez»). Dependencia de un servicio gratuito cuyo catálogo cambia: el 2026-11-24 ya no incluía Qwen Coder. En los foros de NVIDIA se habla de 40 peticiones por minuto, sin confirmación oficial.
 - **Mitigación actual.** Desactivado por defecto. La API no arranca con `nim` sin clave, exige HTTPS y no muestra la clave en logs, errores ni respuestas (con pruebas). `GET /api/llm` y la interfaz indican que el prompt sale del host. Nunca se envían filas de resultados.
 - **Fase 4.** El soporte sigue intacto: misma interfaz y sin enviar filas. De un error de Trino solo sale el mensaje si es de análisis; el de los de ejecución puede citar un valor de una fila (`Invalid format: "<cliente>"`) y se sustituye por un texto fijo, con pruebas. La salida estructurada de NIM no se usa porque no está probada: se pide JSON en el prompt y se comprueba al recibirlo.
-- **Plan de pago.** Antes de activarlo: aviso antes de la primera pregunta, detección de datos personales en la pregunta y prueba con una clave real. El modelo `nvidia/nemotron-3.5-lightning-30b-a3b` figura en el catálogo público, pero no se ha ejecutado.
+- **Fase 6** (2026-11-26, commit `fd43e70`). Con NIM, el backend rechaza con 422, sin enviarla, la pregunta que parece llevar un correo, un teléfono, un DNI o NIE, un IBAN o una tarjeta (con pruebas). La interfaz exige confirmar un aviso antes de preguntar. Los nombres propios no se reconocen: lo cubre el aviso.
+- **Plan de pago.** Falta la prueba con una clave real. El modelo `nvidia/nemotron-3.5-lightning-30b-a3b` figura en el catálogo público, pero no se ha ejecutado.
 - **Disparador.** **Bloquea el uso de NIM con datos reales.** También un cambio de términos o la retirada del modelo.
 
 <a id="td-022"></a>
@@ -294,12 +311,19 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
   - Caddy llega al frontend, a FastAPI y a Odoo, pero no a Trino, MinIO, Ollama, PostgreSQL, Kafka ni Unity Catalog.
   - Dos preguntas reales recorren Caddy, FastAPI, Ollama y Trino por la red interna: 25 s en frío y 4,4 s con el modelo cargado.
 - **Desde Internet** (2026-11-26). Un rastreador llegó al 80 por la IP pública a las 15:39 (`/SDK/webLanguage`, que busca cámaras Hikvision) y recibió un 308: el camino de entrada funciona. Fue la única petición ajena en la primera hora.
-- **Pendiente** (2026-11-26). Las pruebas con contraseña por el nombre público: 200 en la interfaz, en `/api` y en Odoo, y rutas bloqueadas y cookies con contraseña. El agente no conoce la contraseña y CLAUDE.md no le deja recrear Caddy con otra. Falta también abrir la demo desde fuera de la red: la herramienta de descarga del agente rechaza el dominio.
+- **Validación con contraseña** (2026-11-26, commit `f814985`). Caddy está en `192.168.1.27`, reservada por DHCP, con una contraseña nueva. `check_exposure.py` termina con 0 fallos (56 comprobaciones) por la dirección publicada y por el nombre público:
+  - interfaz, `/api/health`, `/api/llm` y una pregunta real (14 s en frío, 2,5 s después);
+  - acceso, WebSocket y cookies de Odoo;
+  - 7 rutas bloqueadas con 404.
+
+  El usuario recreó Caddy: CLAUDE.md no deja hacerlo al agente.
+- **Decisión del usuario** (2026-11-26). Aceptada para el MVP y el TFG. Enciende y apaga a mano las redirecciones de 80, 443 y 8443 en su router Orange hacia `192.168.1.27`. JWT y límite de intentos, después del MVP ([TD-009](#td-009)).
+- **Sin probar.** Abrir la demo desde fuera de la red: la herramienta de descarga del agente rechaza el dominio.
 - **Disponibilidad** (2026-11-26).
   - **La conexión con el router se corta a ratos.** En 3 minutos, tres cortes de 3 a 70 s en los que no responden ni el router ni Internet ni la IP pública: conexión el 77 % del tiempo. El adaptador sigue conectado y Windows no registra conflictos de IP. Mientras dura, la demo no responde. Resuelto el mismo día (ver «Cambio de IP»).
   - Caddy vuelve cuando vuelve Docker, pero Docker Desktop no arranca al iniciar sesión, y Windows suspende el equipo a los 10 minutos sin uso (no lo ha hecho en dos días).
   - El DNS secundario del equipo, `4.4.4.4`, no responde: Windows tarda 7 s en resolver o falla, y Caddy necesita DNS para renovar el certificado. Corregido el mismo día.
-- **Cambio de IP** (2026-11-26). Los cortes cuadran con un conflicto de IP: otro dispositivo de la red tiene ahora `192.168.1.24`. El usuario pasó el equipo a DHCP (`192.168.1.27`), con el router como DNS: 200 s sin cortes y nombres resueltos en 10 a 40 ms. Caddy sigue escuchando en `.24`, así que la demo no responde hasta que una persona cambie `CADDY_BIND_IP`, recree Caddy y lleve las redirecciones del router a `.27`. Hasta entonces, el tráfico público puede llegar al otro dispositivo, que lo rechaza.
+- **Cambio de IP** (2026-11-26). Los cortes cuadran con un conflicto de IP: otro dispositivo de la red tiene ahora `192.168.1.24`. El usuario pasó el equipo a DHCP (`192.168.1.27`), con el router como DNS: 200 s sin cortes y nombres resueltos en 10 a 40 ms. Después, el usuario cambió `CADDY_BIND_IP`, recreó Caddy y llevó las redirecciones del router a `.27`.
 - **Límites conocidos.** Los scripts prueban desde el propio equipo: el NAT de retorno cubre el router, pero no lo que filtre el operador. Con la exposición permanente, la contraseña única sin límite de intentos y Odoo sin parches pesan más. Comprobar una contraseña cuesta CPU (bcrypt): muchas peticiones pueden frenar el equipo. Las respuestas 401 y la redirección del 80 llevan `Server: Caddy`, sin versión: el `-Server` del Caddyfile no llega a ellas.
 - **Plan de pago.** Para dejar de asumirla: pagar TD-009 y TD-012, o poner delante un túnel con identidad. Mientras siga publicada: revisar los accesos (`docker compose logs caddy`), cambiar la contraseña con regularidad y no cargar datos reales.
 - **Disparador.** Cualquier acceso inesperado en los logs, o una vulnerabilidad crítica de Odoo 17: corte inmediato con `docker compose --profile caddy stop caddy`.
@@ -319,7 +343,7 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Contexto.** Salvo MinIO, las imágenes se fijan por tag completo. Un tag se puede volver a publicar con otro contenido.
 - **Riesgo.** Dos equipos con el mismo compose podrían ejecutar imágenes distintas.
 - **Mitigación actual.** Tags de versión exacta, comprobados en sus registros.
-- **Plan de pago.** Fijar digests y automatizar su actualización en la Fase 6.
+- **Pago** (2026-11-26, commit `fd43e70`). Las 28 referencias de compose, los Dockerfile y los scripts llevan digest, tomado de la imagen en marcha. `validate.sh` falla si falta alguno, y `scripts/pin_digests.sh --refresh` los vuelve a resolver desde su registro.
 - **Disparador.** Comportamiento distinto entre equipos, o incidente de cadena de suministro.
 
 <a id="td-025"></a>
@@ -365,6 +389,15 @@ El flujo para registrar y pagar deuda es obligatorio y está en [CLAUDE.md](../C
 - **Plan de pago.** Leer de Silver solo las claves afectadas y actualizar Gold por clave.
 - **Disparador.** Más del 70 % del límite de memoria, o un ciclo de más de 60 s.
 
+<a id="td-029"></a>
+### TD-029 · Textos libres que pueden nombrar a personas
+
+- **Contexto.** [TD-004](#td-004) excluye las columnas de datos personales por su nombre. Los textos libres de otras tablas siguen capturándose: nombres de cuentas analíticas, de proyectos o de tareas, y descripciones de líneas. En la demo solo llevan nombres de empresa, que no son datos personales.
+- **Riesgo.** Con datos reales, un texto así puede nombrar a una persona y llegar a Bronze.
+- **Mitigación actual.** Solo datos de demostración (regla 14). `scripts/check_pii.py` busca en las tres capas los datos de personas que hay en Odoo, y daría con ellos.
+- **Plan de pago.** Antes de cargar datos reales: revisar los textos libres de los módulos instalados y excluir o seudonimizar los que puedan nombrar a personas.
+- **Disparador.** Datos reales, o `check_pii.py` con algún fallo.
+
 ## Plantilla
 
 ```markdown
@@ -391,3 +424,4 @@ Añade también la fila correspondiente en la tabla de resumen.
 | 2026-11-25 | Fase 2, Bronze. Pagada: TD-025. Mitigadas: TD-014 (usuarios de MinIO) y TD-016 (integración continua en verde). TD-003 con copia restaurable. TD-005 con prueba automática. TD-022: `Secure` en las cookies y exposición de más, sin accesos. TD-010 y TD-020 actualizadas. Nuevas: TD-026 y TD-027. |
 | 2026-11-25 | Fases 3, 4 y 5. Pagadas: TD-002, TD-007, TD-016, TD-018, TD-019 y TD-027. Mitigadas: TD-011, TD-013, TD-020 y TD-026. Aceptada por el usuario: TD-022 (demo pública). TD-001 alcanza su disparador: 72 % en preguntas no vistas. TD-006, TD-010, TD-014 y TD-021 actualizadas. Nueva: TD-028. |
 | 2026-11-26 | TD-022: publicada por el usuario; camino público validado sin contraseña, con 0 fallos y NAT de retorno; un rastreador llega desde Internet; faltan las pruebas con contraseña. Cortes de red por un conflicto de IP: el equipo pasa de `.24` a `.27`, y Caddy queda pendiente de moverse. TD-026: alcanza su disparador sin compilar (6,0 GB libres en `C:`). TD-012: severidad justificada por la publicación permanente. |
+| 2026-11-26 | Fase 6, endurecimiento. Pagadas: TD-004 (datos personales fuera de Kafka y del lakehouse, con excepción única a la regla 4), TD-005, TD-015, TD-017 y TD-024. Mitigadas: TD-006 (falta comparar claves) y TD-021 (falta probar con clave). Aceptadas por el usuario para el MVP: TD-009, TD-012 y TD-022, con validación pública con contraseña. Nueva: TD-029. |

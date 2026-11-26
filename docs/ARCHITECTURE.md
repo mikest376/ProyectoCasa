@@ -48,14 +48,14 @@ La configuración está en `infra/debezium/`. `scripts/cdc.py register` la compl
 
 1. Asigna `REPLICA IDENTITY FULL` a las tablas sin clave primaria ([TD-005](TECHNICAL_DEBT.md#td-005)).
 2. Crea la publicación para el esquema `public`.
-3. Compara el esquema real con `column-exclude.list` y **se detiene** si alguna columna sospechosa quedaría sin excluir ([TD-004](TECHNICAL_DEBT.md#td-004)).
+3. Compara el esquema real con `column-exclude.list` y **se detiene** si algún secreto o dato personal quedaría sin excluir ([TD-004](TECHNICAL_DEBT.md#td-004)).
 4. Da de alta el conector y espera a que esté en marcha.
 
 | Propiedad | Valor | Motivo |
 |---|---|---|
 | `plugin.name` | `pgoutput` | Incluido en PostgreSQL |
 | `schema.include.list` | `public` | Captura global, sin `table.include.list` |
-| `column.exclude.list` | `column-exclude.list` | Sin contraseñas, claves, tokens ni credenciales de correo |
+| `column.exclude.list` | `column-exclude.list` | Sin contraseñas, claves, tokens, credenciales de correo ni datos personales |
 | `publication.autocreate.mode` | `disabled` | La publicación se prepara aparte; el rol no necesita más permisos |
 | `snapshot.mode` | `initial` | Carga inicial y después cambios |
 | `decimal.handling.mode` | `string` | Decimales exactos. Por defecto llegan como binario en base64 |
@@ -64,6 +64,19 @@ La configuración está en `infra/debezium/`. `scripts/cdc.py register` la compl
 | `database.password` | `${env:DEBEZIUM_DB_PASSWORD}` | La contraseña no aparece en el JSON ni en la API de Connect |
 
 Los topics siguen el patrón `odoo.public.<tabla>`. Solo existe el topic de una tabla cuando ha tenido al menos una fila.
+
+### Datos personales
+
+Los nombres, correos, teléfonos, direcciones, NIF, usuarios y cuentas bancarias, y sus copias en otras tablas, no salen de PostgreSQL: Kafka y Bronze no los ven, y Bronze sigue guardando el evento tal como lo emite Debezium. Silver pone en su lugar seudónimos deterministas derivados del id con `PII_HASH_SALT`, y Gold los nombra por su papel. `Cliente_3f9a1c2e` es siempre el mismo cliente, así que Gold sigue agrupando y cruzando por id ([TD-004](TECHNICAL_DEBT.md#td-004)).
+
+| Capa | `res_partner.name` |
+|---|---|
+| PostgreSQL de Odoo | Azure Interior |
+| Kafka y Bronze | No se captura |
+| Silver | `Contacto_3f9a1c2e` |
+| Gold | `Cliente_3f9a1c2e`, `Comercial_…` o `Proveedor_…` |
+
+Lo guardado antes del cambio se limpió una vez, como excepción aprobada a la regla 4. `scripts/check_pii.py` comprueba que ningún dato personal de Odoo aparece en MinIO: datos, registro de Delta, checkpoints y ficheros sustituidos.
 
 ## Medallion
 
@@ -159,6 +172,7 @@ Los tres comparten imagen y código, y nunca escriben a la vez la misma tabla, s
 | Worker | Leer y añadir, sin borrar | Leer, escribir y borrar |
 | Trino | Nada | Leer. Escribe solo `gold/_trino_metastore/` |
 | Mantenimiento | Leer, escribir y borrar en `bronze/odoo/` | Nada |
+| Copias de seguridad | Leer | Leer |
 
 ## Catálogo y consulta
 
@@ -282,6 +296,18 @@ Caddy publica Odoo y el frontend, con `/api` hacia FastAPI. El procedimiento est
 | Kafka, MinIO y worker | `scripts/test_integration.sh` | Permisos de cada usuario de MinIO, recorrido de Kafka a Bronze con una caída simulada, y de Bronze a Gold con Trino y Unity Catalog comparados |
 
 El token del workflow solo lee, y las acciones están fijadas por commit.
+
+## Operación
+
+| Necesidad | Herramienta | Qué hace |
+|---|---|---|
+| Copias | `scripts/backup.sh`, `scripts/restore.sh --verify` | PostgreSQL de Odoo y de Langfuse, MinIO, Unity Catalog y adjuntos, fuera del repositorio; la verificación restaura en contenedores desechables ([TD-017](TECHNICAL_DEBT.md#td-017)) |
+| Salud | `scripts/health_monitor.py`, `GET /api/system/health` | El monitor ve lo que los servicios no ven sin romper la segmentación: slot de WAL, identidad de réplica, retraso de Kafka, memoria, VRAM y discos. El backend informa de sus dependencias ([TD-015](TECHNICAL_DEBT.md#td-015)) |
+| Datos personales | `scripts/check_pii.py` | Busca los datos personales de Odoo en las tres capas ([TD-004](TECHNICAL_DEBT.md#td-004)) |
+| Imágenes | `scripts/pin_digests.sh` | Toda imagen lleva digest; `validate.sh` lo exige ([TD-024](TECHNICAL_DEBT.md#td-024)) |
+| Exposición | `scripts/check_exposure.py` | Caddy por la dirección publicada y por el nombre público, con y sin contraseña ([TD-022](TECHNICAL_DEBT.md#td-022)) |
+
+Con `LLM_PROVIDER=nim`, el backend no envía preguntas que parezcan llevar datos personales, y la interfaz pide confirmar un aviso antes de preguntar ([TD-021](TECHNICAL_DEBT.md#td-021)).
 
 ## Particularidades de Odoo 17
 

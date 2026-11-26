@@ -354,7 +354,7 @@ Con `CADDY_RESTART=no`, el valor por defecto, Caddy no se reinicia solo: tras ap
 | **3** | Silver, Gold, Unity Catalog y Trino | Los cinco dominios se consultan desde Trino | Completada |
 | **4** | Text-to-SQL: LLM, FastAPI y Langfuse | Conjunto de evaluación medido y SQL peligroso rechazado | Completada: 72 % en preguntas no vistas ([TD-001](docs/TECHNICAL_DEBT.md#td-001)) |
 | **5** | Dashboard conversacional: Next.js y Tailwind | De la pregunta al gráfico, de extremo a extremo | Completada |
-| **6** | Endurecimiento: JWT, TLS interno, observabilidad, copias | Deuda de severidad Alta pagada | Pendiente |
+| **6** | Endurecimiento: datos personales, observabilidad, copias, digests | Deuda de severidad Alta pagada | En curso: TD-004 pagada; TD-009, TD-012 y TD-022, aceptadas para el TFG; TD-021, mitigada ([deuda](docs/TECHNICAL_DEBT.md)) |
 
 ## Documentación
 

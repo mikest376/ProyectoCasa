@@ -6,6 +6,7 @@
 | `policies/medallion-worker.json` | Único escritor. En Bronze puede añadir, no borrar |
 | `policies/trino.json` | Solo lectura de Silver y Gold, más su metastore |
 | `policies/bronze-maintenance.json` | Compactar y limpiar `bronze/odoo/` |
+| `policies/backup.json` | Solo leer las tres capas, para `scripts/backup.sh` ([TD-017](../../docs/TECHNICAL_DEBT.md#td-017)) |
 
 `@BRONZE@`, `@SILVER@` y `@GOLD@` se sustituyen por los nombres de los buckets de `.env`.
 
@@ -15,6 +16,9 @@
 | `WORKER_S3_ACCESS_KEY_ID` | Leer y escribir, sin borrar | Leer, escribir y borrar | Leer, escribir y borrar, salvo `_trino_metastore/` | No |
 | `TRINO_S3_ACCESS_KEY_ID` | Nada | Leer | Leer; escribir solo en `_trino_metastore/` | No |
 | `MAINTENANCE_S3_ACCESS_KEY_ID` | Leer, escribir y borrar en `odoo/` | Nada | Nada | No |
+| `BACKUP_S3_ACCESS_KEY_ID` | Leer | Leer | Leer | No |
+
+Restaurar una copia escribe en los tres buckets: `scripts/restore.sh` lo hace con las credenciales de `minio-init`, el único servicio con las raíz.
 
 Cambiar una contraseña o una política: edita `.env` o el fichero y repite la inicialización.
 
