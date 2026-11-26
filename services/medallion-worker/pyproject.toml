@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "confluent-kafka>=2.16,<3",
     "deltalake>=1.7,<2",
+    "httpx>=0.28,<1",
     "polars>=2.2,<3",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.9,<3",
@@ -37,12 +38,14 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105"]
+# Filas de ejemplo: una por línea se lee mejor.
+"tests/samples.py" = ["E501", "S101"]
 
 [tool.mypy]
 strict = true
 python_version = "3.11"
 files = ["src", "tests"]
-mypy_path = "src"
+mypy_path = "src:tests"
 # Sin él, mypy exige pasar a Settings() los campos que vienen del entorno.
 plugins = ["pydantic.mypy"]
 
@@ -52,4 +55,5 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 markers = ["integration: necesita Kafka y MinIO (scripts/test_integration.sh)"]

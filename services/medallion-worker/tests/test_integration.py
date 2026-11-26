@@ -17,7 +17,8 @@ from deltalake.exceptions import DeltaError
 from medallion_worker.batching import TopicBatch
 from medallion_worker.config import Settings
 from medallion_worker.consumer import build_consumer, run
-from medallion_worker.sinks import REJECTED_TABLE, BronzeSink, DeltaSink, storage_options
+from medallion_worker.sinks import REJECTED_TABLE, BronzeSink, DeltaSink
+from medallion_worker.storage import storage_options
 
 pytestmark = [
     pytest.mark.integration,

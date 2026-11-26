@@ -4,7 +4,7 @@
 
 Plataforma analítica local que replica Odoo 17 casi en tiempo real en un lakehouse abierto y permite consultarlo en lenguaje natural. Funciona en un solo equipo con Docker Compose y un modelo de lenguaje local: por defecto, los datos del ERP no salen del host.
 
-> **Estado: Fase 2, Bronze.** Un cambio en Odoo llega a Kafka en torno a un segundo y a Delta Lake en el lote siguiente (30 s). Las 198 tablas con datos están en Bronze, sin pérdidas tras caídas forzadas del worker, de MinIO y de Docker. La API y el frontend son esqueletos funcionales. El detalle de lo que falta por probar está en [TD-020](docs/TECHNICAL_DEBT.md#td-020).
+> **Estado: Fase 5, dashboard conversacional.** De un cambio en Odoo a una respuesta en el navegador: Debezium y Kafka, Delta Lake en tres capas, Trino y un modelo local de 3B en la GPU. Una pregunta se responde en unos 3 segundos, con el SQL a la vista. Precisión medida: 72 % en preguntas no vistas ([TD-001](docs/TECHNICAL_DEBT.md#td-001)). Lo que falta por probar está en [TD-020](docs/TECHNICAL_DEBT.md#td-020).
 
 - [Objetivos](#objetivos)
 - [Arquitectura](#arquitectura)
@@ -64,7 +64,7 @@ flowchart LR
 
     subgraph app["6 · Aplicación"]
         api["FastAPI<br/>Text-to-SQL seguro"]
-        web["Next.js<br/>Tremor + Tailwind"]
+        web["Next.js<br/>Tailwind + Recharts"]
         api --> web
     end
 
@@ -105,7 +105,7 @@ El detalle de cada flujo, las versiones y los controles de seguridad están en [
 | Recurso | Equipo de referencia | Comentario |
 |---|---|---|
 | CPU | AMD Ryzen 5 5600 (6 núcleos, 12 hilos) | |
-| RAM | 32 GB DDR4 | 22 GB para WSL 2 |
+| RAM | 32 GB DDR4 | 16 GB para WSL 2 |
 | GPU | NVIDIA GTX 1060, 6 GB | El modelo 3B cabe en la VRAM libre ([TD-001](docs/TECHNICAL_DEBT.md#td-001)) |
 | Disco | 60 GB libres en la unidad donde Docker guarda sus datos | Imágenes, modelo y datos |
 
@@ -121,7 +121,7 @@ Por defecto, WSL usa solo el 50 % de la RAM, que no basta para este proyecto. En
 
 ```ini
 [wsl2]
-memory=22GB
+memory=16GB
 processors=10
 swap=4GB
 ```
@@ -136,16 +136,16 @@ bash scripts/check_env.sh --gpu
 
 | Capa | Servicios | Límite (MiB) |
 |---|---|---:|
-| Origen | PostgreSQL, Odoo | 2560 |
+| Origen | PostgreSQL, Odoo | 1280 |
 | Streaming | Kafka, Debezium Connect | 2560 |
-| Lakehouse | MinIO, Unity Catalog | 1792 |
-| Consulta | Trino (heap de 4 GB) | 5120 |
-| IA | Ollama | 4096 |
-| Aplicación | Worker, FastAPI, Next.js | 2560 |
-| Observabilidad | Langfuse y su base de datos | 1024 |
+| Lakehouse | MinIO, Unity Catalog | 1280 |
+| Consulta | Trino (heap de 2 GB) | 3072 |
+| IA | Ollama | 2560 |
+| Aplicación | Worker (ingesta, transformación y mantenimiento), FastAPI, Next.js | 1920 |
+| Observabilidad | Langfuse y su base de datos | 832 |
 | Entrada | Caddy | 128 |
-| **Total** | | **19840** |
-| **Reserva de WSL** | | **2688** |
+| **Total** | | **13632** |
+| **Reserva de WSL** | | **2752** |
 
 El desglose por contenedor y el presupuesto de VRAM están en [CLAUDE.md](CLAUDE.md#presupuesto-de-memoria).
 
@@ -174,9 +174,13 @@ python3 scripts/cdc.py status
 **Lakehouse, servicios propios y entrada:**
 
 ```bash
-docker compose --profile lakehouse up -d --wait minio
+docker compose --profile lakehouse up -d --wait minio unity-catalog
 docker compose --profile lakehouse up minio-init           # buckets y un usuario por servicio
-docker compose --profile apps up -d --build --wait         # el worker empieza a escribir Bronze
+docker compose --profile query up -d --build --wait        # Trino
+docker compose --profile ai up -d --wait                   # Ollama
+docker compose exec ollama ollama pull qwen2.5-coder:3b-instruct-q4_K_M
+docker compose --profile observability up -d --wait        # Langfuse
+docker compose --profile apps up -d --build --wait         # Bronze, Silver, Gold y catálogos
 docker compose --profile caddy up -d                       # solo en 127.0.0.1
 ```
 
@@ -186,12 +190,12 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 |---|---|---|
 | `source` | PostgreSQL, Odoo | Probado |
 | `streaming` | Kafka, Debezium Connect | Probado |
-| `lakehouse` | MinIO, Unity Catalog | MinIO probado, con un usuario por servicio; Unity Catalog en la Fase 3 |
-| `apps` | Worker, FastAPI, Next.js | El worker escribe Bronze; FastAPI y Next.js son esqueletos |
+| `lakehouse` | MinIO, Unity Catalog | Probado, con un usuario de MinIO por servicio |
+| `apps` | Worker (ingesta, transformación y mantenimiento), FastAPI, Next.js | Probado de extremo a extremo, también a través de Caddy |
 | `observability` | Langfuse 2 | Probado |
 | `caddy` | Caddy | Probado en `127.0.0.1`, con certificado público |
-| `query` | Trino | Catálogo probado; se activa en la Fase 3 |
-| `ai` | Ollama | Fase 4 |
+| `query` | Trino | Probado: 27 tablas, iguales en los dos catálogos |
+| `ai` | Ollama | Probado: modelo 3B entero en la GPU |
 
 | Interfaz | Dirección |
 |---|---|
@@ -205,12 +209,12 @@ Los servicios se agrupan en perfiles y nada arranca sin elegir uno:
 ```bash
 docker compose --profile "*" down     # parar todo, conservando los datos
 bash scripts/validate.sh              # lint, tipos, pruebas, secretos y configuración
-bash scripts/test_integration.sh      # permisos de MinIO y recorrido de Kafka a Bronze
+bash scripts/test_integration.sh      # permisos de MinIO y recorrido de Kafka a Gold
 ```
 
-Si se reinicia Docker Desktop, PostgreSQL puede quedarse parado ([TD-027](docs/TECHNICAL_DEBT.md#td-027)): `docker compose --profile source up -d --wait`.
+Tras editar `infra/caddy`, `infra/odoo` o `infra/postgres`, repite el `up` con `--build`: su configuración va dentro de la imagen ([TD-027](docs/TECHNICAL_DEBT.md#td-027)).
 
-Tras instalar módulos de Odoo hay que repetir `python3 scripts/cdc.py register`: prepara las tablas nuevas y comprueba que no añaden columnas con secretos.
+Tras instalar módulos de Odoo hay que repetir `python3 scripts/cdc.py register`, que prepara las tablas nuevas y comprueba que no añaden columnas con secretos, y `python3 scripts/check_contracts.py`, que comprueba que Silver las sigue entendiendo.
 
 ## Proveedor de LLM
 
@@ -227,7 +231,7 @@ Los [términos de prueba de NVIDIA](https://assets.ngc.nvidia.com/products/api-c
 
 ## Exposición para la defensa del TFG
 
-Durante la presentación se pueden publicar Odoo y el frontend a través de Caddy, con los puertos 80, 443 y 8443 (TCP) del router redirigidos a este equipo (`192.168.1.24`). Con un solo nombre público, el frontend va en el 443 y Odoo en el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. **Es una excepción temporal** a la regla de no exponer nada sin autenticación propia ([TD-009](docs/TECHNICAL_DEBT.md#td-009), [TD-022](docs/TECHNICAL_DEBT.md#td-022)).
+Durante la presentación se pueden publicar Odoo y el frontend a través de Caddy, con los puertos 80, 443 y 8443 (TCP) del router redirigidos a este equipo (`192.168.1.27`). Con un solo nombre público, el frontend va en el 443 y Odoo en el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. **Es una excepción** a la regla de no exponer nada sin autenticación propia ([TD-009](docs/TECHNICAL_DEBT.md#td-009), [TD-022](docs/TECHNICAL_DEBT.md#td-022)): el usuario ha decidido mantener la demo publicada, solo con datos de demostración.
 
 ### Qué queda accesible
 
@@ -258,7 +262,7 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
 4. En `.env`, con un solo nombre público:
 
    ```bash
-   CADDY_BIND_IP=192.168.1.24
+   CADDY_BIND_IP=192.168.1.27
    CADDY_ODOO_HTTPS_PORT=8443
    CADDY_APP_HOST=tfg.example.org
    CADDY_ODOO_HOST=tfg.example.org:8443
@@ -266,7 +270,7 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
    ```
 
    Con dos nombres, uno por servicio y sin puerto: los dos van por el 443 y el 8443 no se abre.
-5. En el router, redirige **solo** 80, 443 y 8443 TCP a `192.168.1.24`. Sin DMZ ni UPnP. En el firewall de Windows, permite solo esos puertos en el perfil de red activo. Desde PowerShell como administrador:
+5. En el router, redirige **solo** 80, 443 y 8443 TCP a `192.168.1.27`. Sin DMZ ni UPnP. Reserva esa IP para este equipo en el DHCP del router: si cambia, la demo deja de responder, y una IP fija dentro del rango del DHCP puede chocar con otro dispositivo. En el firewall de Windows, permite solo esos puertos en el perfil de red activo. Desde PowerShell como administrador:
 
    ```powershell
    New-NetFirewallRule -DisplayName 'TFG Caddy' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80,443,8443 -Profile Public
@@ -296,7 +300,7 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
 
 ### Durante
 
-- Expón lo imprescindible: minutos antes, no días antes.
+- Si no es la demo permanente, expón lo imprescindible: minutos antes, no días antes.
 - Vigila los accesos: `docker compose logs -f caddy`.
 - **Corte inmediato:** `docker compose --profile caddy stop caddy`.
 
@@ -306,7 +310,11 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
 2. Elimina las redirecciones del router (80, 443 y 8443) y la regla del firewall: `Remove-NetFirewallRule -DisplayName 'TFG Caddy'`.
 3. Cambia las contraseñas usadas.
 
-Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda.
+Con `CADDY_RESTART=no`, el valor por defecto, Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda. Con `unless-stopped`, vuelve con Docker. Para que la demo permanente siga en pie hace falta además:
+
+- Que Docker Desktop arranque al iniciar sesión (*Settings → General → Start Docker Desktop when you sign in*), y que alguien inicie sesión tras cada reinicio de Windows.
+- Que el equipo no se suspenda: `powercfg /change standby-timeout-ac 0`.
+- Un DNS que responda en el adaptador de red: Caddy lo necesita para renovar el certificado.
 
 ## Estructura del repositorio
 
@@ -343,9 +351,9 @@ Caddy no se reinicia solo: tras apagar el equipo, la exposición no se reanuda.
 | **0** | Base arquitectónica | Compose válido, presupuestos y deuda documentados | Completada |
 | **1** | Origen y CDC: Odoo, PostgreSQL, Kafka, Debezium | Un cambio en Odoo aparece en Kafka en menos de 5 s | Completada |
 | **2** | Bronze: worker, MinIO e integración continua | Todas las tablas en Delta; un reinicio no pierde eventos | Completada |
-| **3** | Silver, Gold, Unity Catalog y Trino | Los cinco dominios se consultan desde Trino | Pendiente |
-| **4** | Text-to-SQL: LLM, FastAPI y Langfuse | Conjunto de evaluación superado y SQL peligroso rechazado | Pendiente |
-| **5** | Dashboard conversacional: Next.js y Tremor | De la pregunta al gráfico, de extremo a extremo | Pendiente |
+| **3** | Silver, Gold, Unity Catalog y Trino | Los cinco dominios se consultan desde Trino | Completada |
+| **4** | Text-to-SQL: LLM, FastAPI y Langfuse | Conjunto de evaluación medido y SQL peligroso rechazado | Completada: 72 % en preguntas no vistas ([TD-001](docs/TECHNICAL_DEBT.md#td-001)) |
+| **5** | Dashboard conversacional: Next.js y Tailwind | De la pregunta al gráfico, de extremo a extremo | Completada |
 | **6** | Endurecimiento: JWT, TLS interno, observabilidad, copias | Deuda de severidad Alta pagada | Pendiente |
 
 ## Documentación

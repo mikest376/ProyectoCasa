@@ -20,6 +20,13 @@ class ChatMessage:
         return {"role": self.role, "content": self.content}
 
 
+@dataclass(frozen=True, slots=True)
+class Completion:
+    text: str
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+
+
 class LLMClient(Protocol):
     @property
     def provider(self) -> str: ...
@@ -31,7 +38,10 @@ class LLMClient(Protocol):
     def external(self) -> bool:
         """True si el prompt sale del host."""
 
-    async def complete(self, messages: Sequence[ChatMessage]) -> str: ...
+    async def complete(
+        self, messages: Sequence[ChatMessage], schema: dict[str, Any] | None = None
+    ) -> Completion:
+        """Con schema, se pide al proveedor que responda JSON con esa forma, si lo admite."""
 
 
 async def post_json(
@@ -59,6 +69,10 @@ async def post_json(
     if not isinstance(data, dict):
         raise LLMError(f"{provider}: respuesta no válida")
     return data
+
+
+def token_count(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def require_text(value: Any, provider: str) -> str:

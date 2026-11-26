@@ -27,3 +27,5 @@ def configure(level: str) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     logging.basicConfig(level=level, handlers=[handler], force=True)
+    # Una línea por petición HTTP no aporta nada y muestra direcciones internas.
+    logging.getLogger("httpx").setLevel(logging.WARNING)

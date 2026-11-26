@@ -13,7 +13,7 @@ bash scripts/check_env.sh --gpu    # además prueba la GPU en un contenedor
 |---|---|
 | `/etc/wsl.conf` tiene líneas que no son configuración, o trabajas como root | [1](#1-etcwslconf) |
 | El proyecto pertenece a otro usuario, o `permission denied` al usar Docker | [2](#2-permisos) |
-| RAM de WSL inferior a 21000 MiB | [3](#3-wslconfig) |
+| RAM de WSL inferior a 15500 MiB | [3](#3-wslconfig) |
 | Poco espacio, el daemon no responde o falla `docker pull` | [4](#4-docker-desktop) |
 
 ## 1. `/etc/wsl.conf`
@@ -76,10 +76,15 @@ Por defecto, WSL usa el 50 % de la RAM. En Windows, crea o edita `C:\Users\<usua
 
 ```ini
 [wsl2]
-memory=22GB
+memory=16GB
 processors=10
 swap=4GB
+
+[experimental]
+autoMemoryReclaim=gradual
 ```
+
+`autoMemoryReclaim=gradual` devuelve a Windows la caché de disco de Linux cuando WSL está ocioso ([documentación](https://learn.microsoft.com/en-us/windows/wsl/wsl-config); por defecto, `dropCache`). Con los servicios en marcha apenas actúa: lo que protege `C:` es el tope de `memory`. Una compilación grande llena esa memoria y Windows amplía su fichero de paginación en `C:`; si queda poco espacio, reinicia WSL ([paso 5](#5-reiniciar-y-verificar), [TD-026](TECHNICAL_DEBT.md#td-026)).
 
 Afecta a todas las distribuciones, incluida la de Docker Desktop. **Deshacer:** borra o renombra el fichero.
 
@@ -123,7 +128,7 @@ Abre Docker Desktop, espera a que indique *Engine running* y, en una terminal nu
 
 ```bash
 whoami                              # mati
-free -h                             # unos 22 GiB
+free -h                             # unos 16 GiB
 docker run --rm hello-world         # descarga y ejecución
 bash scripts/check_env.sh --gpu     # 0 fallos
 ```
