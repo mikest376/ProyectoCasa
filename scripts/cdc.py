@@ -4,7 +4,7 @@
 Uso, desde la raíz del repositorio y con los perfiles source y streaming en marcha:
 
     python3 scripts/cdc.py prepare    REPLICA IDENTITY (TD-005) y publicación
-    python3 scripts/cdc.py check      columnas sensibles sin excluir (TD-004)
+    python3 scripts/cdc.py check      secretos o datos personales sin excluir (TD-004)
     python3 scripts/cdc.py register   prepare + check + alta del conector
     python3 scripts/cdc.py status     estado del conector, del slot y de los topics
 
@@ -44,6 +44,47 @@ REVIEWED_NOT_SECRET = frozenset(
         "res_users_settings.push_to_talk_key",  # tecla del teclado
     }
 )
+
+# Datos personales (TD-004): columnas que identifican a una persona en cualquier tabla...
+PERSONAL = re.compile(
+    r"(^|_)(email|email_normalized|email_from|email_cc|email_to|reply_to|phone|phone_sanitized"
+    r"|mobile|street2?|zip|vat|login|contact_name|partner_name|display_name|acc_number"
+    r"|acc_holder_name|common_name)$"
+)
+# ...y las que solo lo son en su tabla: nombres, títulos y notas de personas y empresas.
+PERSONAL_COLUMNS = frozenset(
+    {
+        "res_partner.name",
+        "res_partner.complete_name",
+        "res_partner.commercial_company_name",
+        "res_partner.company_name",
+        "res_partner.website",
+        "res_partner.comment",
+        "res_partner.function",
+        "res_users.signature",
+        "crm_lead.name",
+        "crm_lead.website",
+        "crm_lead.description",
+        "crm_lead.email_domain_criterion",  # con dominios genéricos, el correo entero
+        "mail_message.record_name",
+        "mail_message.subject",
+        "mail_tracking_value.old_value_char",
+        "mail_tracking_value.new_value_char",
+        "mail_activity.res_name",
+        "mail_guest.name",
+        "calendar_event.name",
+        "calendar_event.description",
+    }
+)
+# Revisadas una a una: el nombre coincide, pero no identifican a una persona.
+REVIEWED_NOT_PERSONAL: frozenset[str] = frozenset()
+
+
+def is_personal(table: str, column: str) -> bool:
+    name = f"{table}.{column}"
+    return (PERSONAL.search(column) is not None or name in PERSONAL_COLUMNS) and (
+        name not in REVIEWED_NOT_PERSONAL
+    )
 
 
 class CdcError(RuntimeError):
@@ -148,6 +189,7 @@ def check() -> None:
 
     excluded: list[str] = []
     exposed: list[str] = []
+    personal: list[str] = []
     broken_keys: list[str] = []
     for table, column, data_type, is_key in rows:
         name = f"{table}.{column}"
@@ -155,22 +197,28 @@ def check() -> None:
             excluded.append(name)
             if is_key == "t":
                 broken_keys.append(name)
-        elif (
-            data_type in TEXT_TYPES
-            and SUSPICIOUS.search(column)
-            and name not in REVIEWED_NOT_SECRET
-        ):
+        elif data_type not in TEXT_TYPES:
+            continue
+        elif SUSPICIOUS.search(column) and name not in REVIEWED_NOT_SECRET:
             exposed.append(f"{name} ({data_type})")
+        elif is_personal(table, column):
+            personal.append(f"{name} ({data_type})")
 
     print(f"Columnas revisadas: {len(rows)}. Excluidas de la captura: {len(excluded)}.")
     if broken_keys:
         raise CdcError("La lista excluye claves primarias: " + ", ".join(broken_keys))
+    target = EXCLUDE_FILE.relative_to(ROOT)
     if exposed:
         raise CdcError(
-            "Columnas sospechosas que se capturarían (TD-004). Añádelas a "
-            f"{EXCLUDE_FILE.relative_to(ROOT)} o a REVIEWED_NOT_SECRET:\n  " + "\n  ".join(exposed)
+            f"Columnas sospechosas que se capturarían (TD-004). Añádelas a {target} o a "
+            "REVIEWED_NOT_SECRET:\n  " + "\n  ".join(exposed)
         )
-    print("Ninguna columna sospechosa queda sin excluir.")
+    if personal:
+        raise CdcError(
+            f"Columnas con datos personales que se capturarían (TD-004). Añádelas a {target} o "
+            "a REVIEWED_NOT_PERSONAL:\n  " + "\n  ".join(personal)
+        )
+    print("Ningún secreto ni dato personal queda sin excluir.")
 
 
 def wait_running(name: str, timeout: float = 90.0) -> None:

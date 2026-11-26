@@ -32,7 +32,7 @@ def build_consumer(settings: Settings) -> Any:
             "allow.auto.create.topics": False,
             # Detecta en poco tiempo los topics de tablas nuevas.
             "topic.metadata.refresh.interval.ms": 30_000,
-            # Cota de memoria del búfer local (límite del contenedor: 1536 MiB).
+            # Cota de memoria del búfer local (límite del contenedor: 384 MiB).
             "queued.max.messages.kbytes": 65_536,
         }
     )

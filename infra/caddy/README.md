@@ -11,7 +11,7 @@
 - Las cookies no distinguen puertos: con un solo nombre, el navegador envía la sesión de Odoo también al 443. Por eso Caddy no reenvía `Cookie` al frontend ni a FastAPI.
 - Todo exige contraseña (`basic_auth`). Sin credenciales válidas no pasa nadie: o Caddy no arranca, o responde 401 a todo.
 - Caddy solo comparte red con Odoo, el frontend y FastAPI. No puede alcanzar PostgreSQL, Kafka, MinIO, Trino ni Ollama.
-- La API de administración está desactivada: para aplicar cambios hay que reiniciar el contenedor.
+- La API de administración está desactivada y el Caddyfile va dentro de la imagen (`Dockerfile`): para aplicar cambios, `docker compose --profile caddy up -d --build caddy`.
 - `CADDY_TLS=internal` emite certificados con una CA propia (aviso en el navegador). Con un correo electrónico, usa Let's Encrypt y necesita un dominio público.
 - Docker Desktop no conserva la IP del cliente: el filtrado por IP debe hacerse en el router o en el firewall de Windows.
 

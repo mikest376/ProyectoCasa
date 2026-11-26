@@ -3,11 +3,11 @@
 import httpx
 
 from lakehouse_api.config import Settings
-from lakehouse_api.llm.base import ChatMessage, LLMClient, LLMError
+from lakehouse_api.llm.base import ChatMessage, Completion, LLMClient, LLMError
 from lakehouse_api.llm.nim import NimClient
 from lakehouse_api.llm.ollama import OllamaClient
 
-__all__ = ["ChatMessage", "LLMClient", "LLMError", "build_llm_client"]
+__all__ = ["ChatMessage", "Completion", "LLMClient", "LLMError", "build_llm_client"]
 
 
 def build_llm_client(settings: Settings, http: httpx.AsyncClient) -> LLMClient:

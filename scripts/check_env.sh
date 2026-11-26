@@ -8,10 +8,10 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 2
 
-MIN_RAM_MIB=21000
+MIN_RAM_MIB=15500
 MIN_DISK_GIB=20
-MAX_BUDGET_MIB=20480
-GPU_IMAGE=postgres:15.20-bookworm
+MAX_BUDGET_MIB=14336
+GPU_IMAGE=postgres:15.20-bookworm@sha256:0cb925629e7eb35c77276f3165440d1670c35c2ddbe92b346c579299b75a520f
 
 failures=0
 warnings=0
@@ -55,7 +55,7 @@ ram_mib=$(awk '/^MemTotal/ {print int($2 / 1024)}' /proc/meminfo)
 if ((ram_mib >= MIN_RAM_MIB)); then
     ok "RAM de WSL: $ram_mib MiB"
 else
-    fail "RAM de WSL: $ram_mib MiB; el presupuesto necesita 22 GB (.wslconfig)"
+    fail "RAM de WSL: $ram_mib MiB; el presupuesto necesita 16 GB (.wslconfig)"
 fi
 
 # En una unidad de Windows (/mnt/x) los permisos los gobierna NTFS, no Linux.

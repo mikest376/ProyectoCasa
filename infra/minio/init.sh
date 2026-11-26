@@ -42,5 +42,10 @@ apply_user() {
 
 apply_policy medallion-worker
 apply_policy trino
+apply_policy bronze-maintenance
+apply_policy backup
 apply_user "$WORKER_S3_ACCESS_KEY_ID" "$WORKER_S3_SECRET_ACCESS_KEY" medallion-worker
 apply_user "$TRINO_S3_ACCESS_KEY_ID" "$TRINO_S3_SECRET_ACCESS_KEY" trino
+apply_user "$MAINTENANCE_S3_ACCESS_KEY_ID" "$MAINTENANCE_S3_SECRET_ACCESS_KEY" bronze-maintenance
+# Solo lee las tres capas: scripts/backup.sh (TD-017).
+apply_user "$BACKUP_S3_ACCESS_KEY_ID" "$BACKUP_S3_SECRET_ACCESS_KEY" backup

@@ -35,3 +35,20 @@ public\.mail_message\.body
 public\.mail_mail\.(body_html|headers)
 public\.ir_attachment\.(db_datas|index_content)
 public\.ir_logging\.message
+# Plantillas y vistas: firmas, ejemplos y páginas con nombres y correos (TD-004).
+public\.mail_template\.body_html
+public\.ir_ui_view\.(arch_db|arch_prev)
+
+# --- Datos personales (TD-004): identifican a una persona ----------------------
+# No llegan a Kafka ni a Bronze. Silver pone seudónimos en los nombres que usa el
+# análisis (medallion_worker.pseudonyms). scripts/cdc.py check exige que estén aquí.
+# TODO(TD-029): los textos libres de otras tablas (cuentas analíticas, proyectos) no se revisan.
+public\.[^.]+\.([a-z0-9_]*_)?(email|email_normalized|email_from|email_cc|email_to|reply_to|phone|phone_sanitized|mobile|street2?|zip|vat|login|contact_name|partner_name|display_name|acc_number|acc_holder_name|common_name)
+public\.res_partner\.(name|complete_name|commercial_company_name|company_name|website|comment|function)
+public\.res_users\.signature
+public\.crm_lead\.(name|website|description|email_domain_criterion)
+public\.mail_message\.(record_name|subject)
+public\.mail_tracking_value\.(old|new)_value_char
+public\.mail_activity\.res_name
+public\.mail_guest\.name
+public\.calendar_event\.(name|description)

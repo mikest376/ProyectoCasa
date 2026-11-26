@@ -4,17 +4,29 @@ API de Text-to-SQL: convierte una pregunta en SQL, lo valida y lo ejecuta en Tri
 
 | | |
 |---|---|
-| Tecnología | Python 3.11+, FastAPI; `sqlglot` y cliente de Trino desde la Fase 4 |
+| Tecnología | Python 3.11+, FastAPI, `sqlglot` |
 | Entrada | Preguntas en lenguaje natural desde el frontend |
-| Salida | Filas, SQL ejecutado y tipo de gráfico sugerido |
-| Memoria | 512 MiB |
+| Salida | Filas, SQL ejecutado, gráfico sugerido, tiempos y modelo que ha respondido |
+| Memoria | 384 MiB |
 
-**Estado (Fase 1).** Esqueleto funcional con los proveedores de LLM. Todavía no genera ni ejecuta SQL: eso llega en la Fase 4, junto con los controles obligatorios de [CLAUDE.md](../../CLAUDE.md#reglas-de-arquitectura).
+| Módulo | Función |
+|---|---|
+| `gold_catalog.py` | Esquema de Gold, leído de Unity Catalog |
+| `retrieval.py`, `shots.py`, `prompt.py` | Tabla probable, ejemplos parecidos y prompt |
+| `sql_guard.py` | Validación del SQL como AST: lo que se ejecuta sale del árbol validado |
+| `trino_client.py` | Ejecución de solo lectura, con límite de filas y cancelación por tiempo |
+| `charts.py` | Gráfico que corresponde al resultado |
+| `pipeline.py` | El recorrido completo, con un intento de corrección |
+| `tracing.py` | Trazas en Langfuse, sin filas |
+| `evals/` | 100 preguntas con su SQL de referencia |
 
 | Ruta | Respuesta |
 |---|---|
 | `GET /api/health` | Estado del proceso |
 | `GET /api/llm` | Proveedor, modelo y si el prompt sale del host |
+| `GET /api/examples` | Preguntas de ejemplo por dominio |
+| `GET /api/tables` | Tablas y columnas de Gold, sin datos |
+| `POST /api/query` | Responde una pregunta: `{"question": "..."}` |
 | `GET /docs` | Documentación, solo en `127.0.0.1`: Caddy únicamente publica `/api` |
 
 ## Proveedores de LLM
@@ -28,10 +40,11 @@ Se eligen con `LLM_PROVIDER`:
 
 `nim` necesita `NIM_API_KEY`; sin ella la API no arranca. La clave no aparece en logs, errores ni respuestas.
 
-En la Fase 4 las llamadas al modelo se trazarán en Langfuse con el SDK de Python v2, la versión compatible con el servidor instalado ([TD-023](../../docs/TECHNICAL_DEBT.md#td-023)).
+Los errores de `POST /api/query` llevan `code`, `message` y, si lo hubo, el SQL propuesto: `sql_rejected`, `query_failed`, `bad_output` (422), `busy` (429), `llm_unavailable` (502), `catalog_unavailable` y `trino_unavailable` (503), `timeout` (504).
 
-Lint, tipos y pruebas:
+## Pruebas y evaluación
 
 ```bash
-docker build --target test services/backend
+docker build --target test services/backend                                        # lint, tipos y pruebas
+docker compose exec backend python -m lakehouse_api.evals --split test             # precisión con el modelo real
 ```

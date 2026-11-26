@@ -14,6 +14,7 @@ from lakehouse_api.main import create_app
 
 KEY = "nvapi-clave-de-prueba"
 MESSAGES = [ChatMessage("system", "Eres un asistente SQL"), ChatMessage("user", "¿Ventas?")]
+SCHEMA = {"type": "object", "properties": {"sql": {"type": "string"}}}
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
@@ -26,7 +27,8 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 def complete(settings: Settings, handler: Handler) -> str:
     async def go() -> str:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            return await build_llm_client(settings, http).complete(MESSAGES)
+            completion = await build_llm_client(settings, http).complete(MESSAGES, SCHEMA)
+            return completion.text
 
     return asyncio.run(go())
 
@@ -65,6 +67,14 @@ def test_ollama_request_and_response() -> None:
     assert complete(Settings(), handler) == "SELECT 1"
     assert seen["url"] == "http://ollama:11434/api/chat"
     assert seen["body"]["stream"] is False
+    # Salida restringida al esquema y sin azar: la misma pregunta da el mismo SQL.
+    assert seen["body"]["format"] == SCHEMA
+    assert seen["body"]["options"] == {
+        "temperature": 0,
+        "seed": 7,
+        "num_ctx": 4096,
+        "num_predict": 450,
+    }
     assert seen["body"]["messages"][1] == {"role": "user", "content": "¿Ventas?"}
     assert "authorization" not in seen["headers"]
 

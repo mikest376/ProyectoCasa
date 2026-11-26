@@ -12,6 +12,12 @@
       "Effect": "Allow",
       "Action": ["s3:GetObject"],
       "Resource": ["arn:aws:s3:::@SILVER@/*", "arn:aws:s3:::@GOLD@/*"]
+    },
+    {
+      "Sid": "WriteOwnMetastoreOnly",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:DeleteObject"],
+      "Resource": ["arn:aws:s3:::@GOLD@/_trino_metastore/*"]
     }
   ]
 }

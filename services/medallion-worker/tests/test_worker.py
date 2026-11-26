@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from medallion_worker.batching import Batcher
 from medallion_worker.config import Settings
 from medallion_worker.events import BronzeEvent, InvalidEventError, RejectedEvent, parse_event
-from medallion_worker.sinks import storage_options
+from medallion_worker.storage import storage_options
 
 TOPIC = "odoo.public.sale_order"
 
