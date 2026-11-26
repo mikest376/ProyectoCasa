@@ -231,7 +231,7 @@ Los [términos de prueba de NVIDIA](https://assets.ngc.nvidia.com/products/api-c
 
 ## Exposición para la defensa del TFG
 
-Durante la presentación se pueden publicar Odoo y el frontend a través de Caddy, con los puertos 80, 443 y 8443 (TCP) del router redirigidos a este equipo (`192.168.1.24`). Con un solo nombre público, el frontend va en el 443 y Odoo en el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. **Es una excepción** a la regla de no exponer nada sin autenticación propia ([TD-009](docs/TECHNICAL_DEBT.md#td-009), [TD-022](docs/TECHNICAL_DEBT.md#td-022)): el usuario ha decidido mantener la demo publicada, solo con datos de demostración.
+Durante la presentación se pueden publicar Odoo y el frontend a través de Caddy, con los puertos 80, 443 y 8443 (TCP) del router redirigidos a este equipo (`192.168.1.27`). Con un solo nombre público, el frontend va en el 443 y Odoo en el 8443, con el mismo certificado; el 80 solo redirige a HTTPS. **Es una excepción** a la regla de no exponer nada sin autenticación propia ([TD-009](docs/TECHNICAL_DEBT.md#td-009), [TD-022](docs/TECHNICAL_DEBT.md#td-022)): el usuario ha decidido mantener la demo publicada, solo con datos de demostración.
 
 ### Qué queda accesible
 
@@ -262,7 +262,7 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
 4. En `.env`, con un solo nombre público:
 
    ```bash
-   CADDY_BIND_IP=192.168.1.24
+   CADDY_BIND_IP=192.168.1.27
    CADDY_ODOO_HTTPS_PORT=8443
    CADDY_APP_HOST=tfg.example.org
    CADDY_ODOO_HOST=tfg.example.org:8443
@@ -270,7 +270,7 @@ Durante la presentación se pueden publicar Odoo y el frontend a través de Cadd
    ```
 
    Con dos nombres, uno por servicio y sin puerto: los dos van por el 443 y el 8443 no se abre.
-5. En el router, redirige **solo** 80, 443 y 8443 TCP a `192.168.1.24`. Sin DMZ ni UPnP. En el firewall de Windows, permite solo esos puertos en el perfil de red activo. Desde PowerShell como administrador:
+5. En el router, redirige **solo** 80, 443 y 8443 TCP a `192.168.1.27`. Sin DMZ ni UPnP. Reserva esa IP para este equipo en el DHCP del router: si cambia, la demo deja de responder, y una IP fija dentro del rango del DHCP puede chocar con otro dispositivo. En el firewall de Windows, permite solo esos puertos en el perfil de red activo. Desde PowerShell como administrador:
 
    ```powershell
    New-NetFirewallRule -DisplayName 'TFG Caddy' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80,443,8443 -Profile Public
